@@ -1,0 +1,31 @@
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.spec
+
+# IDE & system
+.vscode/
+.idea/
+*.swp
+*.log
+
+# BDS proprietary packages and extracted themes (严禁提交与外泄)
+*.bds
+*.rar
+*.zip
+*.7z
+unpacked_*
+小板*
+Note-*
+4082*
+converted_themes/
+win11_native_skins/
+tools/
+
+# Workspace docs
+.antigravity_docs/
