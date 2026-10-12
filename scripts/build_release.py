@@ -12,6 +12,14 @@ import zipfile
 import subprocess
 from pathlib import Path
 
+# 强制 UTF-8 编码，防止 Windows CI/CD (cp1252) 下打印中文报错
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = BASE_DIR / "dist"
 BUILD_DIR = BASE_DIR / "build"
