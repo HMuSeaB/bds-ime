@@ -64,7 +64,14 @@ user32.SetWindowsHookExW.restype = wintypes.HHOOK
 user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
 user32.UnhookWindowsHookEx.restype = wintypes.BOOL
 
+VK_BACK = 0x08
+VK_RETURN = 0x0D
+VK_SHIFT = 0x10
+VK_ESCAPE = 0x1B
+VK_SPACE = 0x20
 VK_DELETE = 0x2E
+VK_LSHIFT = 0xA0
+VK_RSHIFT = 0xA1
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = Path(sys._MEIPASS)
@@ -374,25 +381,65 @@ class IMEController:
         self.event_queue = queue.Queue()
         self.ui = ModernCandidateWindow(self.engine, self.commit_word)
 
-        # 托盘/状态指示小浮条
+        # 托盘/状态指示小浮条 (置于右下角任务栏正上方，保证清晰可见)
         self._setup_status_pill()
 
         # 启动按键钩子
         self._start_hook()
 
+        # 启动时展示精致就绪通知提示卡并播放按键音效
+        self._show_startup_toast()
+        self.sound.play()
+
         # UI 循环监听事件
         self.ui.root.after(10, self._process_queue)
 
+    def _show_startup_toast(self):
+        """启动时在屏幕居中下方展示 3 秒 BDS 专属输入法就绪卡片"""
+        try:
+            toast = tk.Toplevel(self.ui.root)
+            toast.overrideredirect(True)
+            toast.attributes("-topmost", True)
+            toast.attributes("-alpha", 0.96)
+            toast.config(bg="#ffb6c1")
+
+            frame = tk.Frame(toast, bg="#fefbf9", padx=18, pady=12)
+            frame.pack(padx=2, pady=2, fill="both", expand=True)
+
+            title = tk.Label(
+                frame, text="🐾 BDS 专属输入法已成功启动！",
+                font=("Microsoft YaHei", 12, "bold"), fg="#d63384", bg="#fefbf9"
+            )
+            title.pack(anchor="w")
+
+            desc = tk.Label(
+                frame, text="• 当前状态：中文输入模式（按 Shift 键切换中/英）\n• 立即体验：切到任意输入框输入拼音（如 nihao）按空格上屏\n• 右键右下角 [中] 字药丸可随时安全退出",
+                font=("Microsoft YaHei", 9), fg="#495057", bg="#fefbf9", justify="left"
+            )
+            desc.pack(anchor="w", pady=(4, 0))
+
+            sw = self.ui.root.winfo_screenwidth()
+            sh = self.ui.root.winfo_screenheight()
+            w, h = 420, 95
+            x = (sw - w) // 2
+            y = sh - 180
+            toast.geometry(f"{w}x{h}+{x}+{y}")
+
+            toast.after(3500, lambda: toast.destroy())
+        except Exception:
+            pass
+
     def _setup_status_pill(self):
-        """屏幕右下角的中/英状态药丸"""
+        """屏幕右下角的中/英状态药丸 (抬高到任务栏上方)"""
         self.pill = tk.Toplevel(self.ui.root)
         self.pill.overrideredirect(True)
         self.pill.attributes("-topmost", True)
-        self.pill.attributes("-alpha", 0.85)
+        self.pill.attributes("-alpha", 0.90)
 
         sw = self.ui.root.winfo_screenwidth()
         sh = self.ui.root.winfo_screenheight()
-        self.pill.geometry(f"50x26+{sw - 70}+{sh - 70}")
+        # Windows 11 任务栏通常高 48px，放在底部偏上 90px 处，确保醒目可见
+        self.pill.geometry(f"52x28+{sw - 85}+{sh - 95}")
 
         self.pill_lbl = tk.Label(
             self.pill, text="中", font=("Segoe UI", 10, "bold"),
