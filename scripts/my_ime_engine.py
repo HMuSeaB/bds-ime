@@ -203,8 +203,8 @@ class PinyinEngine:
                 i += 1
         return res
 
-    def query(self, raw_input: str, limit: int = 5) -> tuple[str, list[str]]:
-        """输入拼音字母串，输出分词显示与高频候选项"""
+    def query(self, raw_input: str, limit: int = 60) -> tuple[str, list[str]]:
+        """输入拼音字母串，输出分词显示与丰富候选词列表 (支持长句贪心智能拼接)"""
         raw = raw_input.lower()
         if not raw:
             return "", []
@@ -214,14 +214,42 @@ class PinyinEngine:
         compact_py = "".join(syllables)
 
         cur = self.conn.cursor()
-        # 1. 优先完全精准匹配
+        # 1. 优先完全精准匹配 (获取全量匹配词汇)
         cur.execute(
             "SELECT word FROM words WHERE pinyin = ? ORDER BY weight DESC LIMIT ?",
             (compact_py, limit)
         )
         candidates = [r[0] for r in cur.fetchall()]
 
-        # 2. 不足时前缀模糊联想
+        # 2. 如果包含多个音节，执行贪心最长词组拼接 (如 kuai'jie'jian'yong'bu'liao -> 快捷键 + 用不了)
+        if len(syllables) > 1:
+            assembled_chunks = []
+            idx = 0
+            n_syl = len(syllables)
+            while idx < n_syl:
+                matched_word = None
+                for span in range(min(4, n_syl - idx), 0, -1):
+                    chunk_py = "".join(syllables[idx : idx + span])
+                    cur.execute(
+                        "SELECT word FROM words WHERE pinyin = ? ORDER BY weight DESC LIMIT 1",
+                        (chunk_py,)
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        matched_word = row[0]
+                        idx += span
+                        break
+                if matched_word:
+                    assembled_chunks.append(matched_word)
+                else:
+                    assembled_chunks.append(syllables[idx])
+                    idx += 1
+            if assembled_chunks:
+                full_phrase = "".join(assembled_chunks)
+                if full_phrase not in candidates:
+                    candidates.insert(0, full_phrase)
+
+        # 3. 不足时前缀模糊联想补全
         if len(candidates) < limit:
             needed = limit - len(candidates)
             placeholders = ",".join(["?"] * len(candidates)) if candidates else "''"
@@ -233,19 +261,6 @@ class PinyinEngine:
             cur.execute(sql, [f"{compact_py}%"] + candidates + [needed])
             more = [r[0] for r in cur.fetchall()]
             candidates.extend(more)
-
-        # 3. 兜底逐字拼凑（若多音节未匹配到完整词组）
-        if not candidates and len(syllables) > 1:
-            assembled = ""
-            for syl in syllables:
-                cur.execute("SELECT word FROM words WHERE pinyin = ? ORDER BY weight DESC LIMIT 1", (syl,))
-                row = cur.fetchone()
-                if row:
-                    assembled += row[0]
-                else:
-                    assembled += syl
-            if assembled:
-                candidates.append(assembled)
 
         return pinyin_display, candidates
 
@@ -302,11 +317,21 @@ class ModernCandidateWindow:
         self.main_frame.pack(padx=2, pady=2, fill="both", expand=True)
 
         # 拼音组合行
+        # 拼音组合行与翻页提示
+        self.pinyin_row = tk.Frame(self.main_frame, bg=self.bg_color)
+        self.pinyin_row.pack(fill="x", pady=(0, 4))
+
         self.lbl_pinyin = tk.Label(
-            self.main_frame, text="", font=("Segoe UI", 11, "bold"),
+            self.pinyin_row, text="", font=("Segoe UI", 11, "bold"),
             fg=self.pinyin_color, bg=self.bg_color, anchor="w"
         )
-        self.lbl_pinyin.pack(fill="x", pady=(0, 4))
+        self.lbl_pinyin.pack(side="left")
+
+        self.lbl_page = tk.Label(
+            self.pinyin_row, text="", font=("Microsoft YaHei", 9),
+            fg="#888888", bg=self.bg_color, anchor="e"
+        )
+        self.lbl_page.pack(side="right")
 
         # 候选词横排列表
         self.cands_frame = tk.Frame(self.main_frame, bg=self.bg_color)
@@ -326,7 +351,7 @@ class ModernCandidateWindow:
         self.current_candidates = []
         self.current_pinyin = ""
 
-    def show_candidates(self, pinyin_display: str, candidates: list[str]):
+    def show_candidates(self, pinyin_display: str, candidates: list[str], page: int = 0, total_pages: int = 1):
         self.current_pinyin = pinyin_display
         self.current_candidates = candidates
 
@@ -335,6 +360,10 @@ class ModernCandidateWindow:
             return
 
         self.lbl_pinyin.config(text=pinyin_display)
+        if total_pages > 1:
+            self.lbl_page.config(text=f"({page + 1}/{total_pages}  -/=翻页)")
+        else:
+            self.lbl_page.config(text="")
 
         for i, lbl in enumerate(self.cand_labels):
             if i < len(candidates):
@@ -356,8 +385,8 @@ class ModernCandidateWindow:
         # 边界防溢出
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        if x + 350 > sw:
-            x = sw - 360
+        if x + 400 > sw:
+            x = sw - 410
         if y + 80 > sh:
             y = pt.y - 80
 
@@ -376,6 +405,9 @@ class IMEController:
         self.engine = PinyinEngine(DB_PATH)
         self.sound = SoundHelper()
         self.input_buffer = ""
+        self.all_candidates = []
+        self.cand_page = 0
+        self.pinyin_disp = ""
         self.is_chinese_mode = True
 
         self.event_queue = queue.Queue()
@@ -393,6 +425,26 @@ class IMEController:
 
         # UI 循环监听事件
         self.ui.root.after(10, self._process_queue)
+
+    def update_pinyin(self):
+        """输入拼音变化时重新查询并渲染第 1 页候选词"""
+        self.cand_page = 0
+        if self.input_buffer:
+            self.sound.play()
+            self.pinyin_disp, self.all_candidates = self.engine.query(self.input_buffer, limit=60)
+            self._render_current_page()
+        else:
+            self.all_candidates = []
+            self.ui.hide()
+
+    def _render_current_page(self):
+        """根据当前页码切片候选词并刷新候选浮窗"""
+        total_cands = len(self.all_candidates)
+        total_pages = max(1, (total_cands + 4) // 5)
+        self.cand_page = max(0, min(self.cand_page, total_pages - 1))
+        start_idx = self.cand_page * 5
+        page_cands = self.all_candidates[start_idx : start_idx + 5]
+        self.ui.show_candidates(self.pinyin_disp, page_cands, self.cand_page, total_pages)
 
     def _show_startup_toast(self):
         """启动时在屏幕居中下方展示 3 秒 BDS 专属输入法就绪卡片"""
@@ -413,14 +465,14 @@ class IMEController:
             title.pack(anchor="w")
 
             desc = tk.Label(
-                frame, text="• 当前状态：中文输入模式（按 Shift 键切换中/英）\n• 立即体验：切到任意输入框输入拼音（如 nihao）按空格上屏\n• 右键右下角 [中] 字药丸可随时安全退出",
+                frame, text="• 快捷键保护：Ctrl+C/V、Alt+Tab 等系统快捷键完全放行\n• 选词与翻页：按空格选首词，按 - / = 翻页浏览海量词库\n• 退出方式：按 Ctrl+Shift+Q 或右键右下角 [中] 药丸",
                 font=("Microsoft YaHei", 9), fg="#495057", bg="#fefbf9", justify="left"
             )
             desc.pack(anchor="w", pady=(4, 0))
 
             sw = self.ui.root.winfo_screenwidth()
             sh = self.ui.root.winfo_screenheight()
-            w, h = 420, 95
+            w, h = 440, 105
             x = (sw - w) // 2
             y = sh - 180
             toast.geometry(f"{w}x{h}+{x}+{y}")
@@ -471,6 +523,8 @@ class IMEController:
         self.sound.play()
         self.engine.learn_word(word, self.input_buffer)
         self.input_buffer = ""
+        self.all_candidates = []
+        self.cand_page = 0
         self.ui.hide()
         # 延迟 15ms 等待空格键完全被系统拦截并释放，再注入 Unicode 字符，防止按键时序冲突
         def do_send():
@@ -484,6 +538,22 @@ class IMEController:
         返回 True 表示拦截并消费该按键
         返回 False 表示放行给系统正常输入
         """
+        # 1. 组合快捷键与修饰键保护：如果当前按下了 Ctrl、Alt 或 Win 键，绝不拦截！放行给系统执行系统快捷键 (如 Ctrl+C, Ctrl+V, Alt+Tab, Win+D 等)
+        if (user32.GetAsyncKeyState(0x11) & 0x8000) or \
+           (user32.GetAsyncKeyState(0x12) & 0x8000) or \
+           (user32.GetAsyncKeyState(0x5B) & 0x8000) or \
+           (user32.GetAsyncKeyState(0x5C) & 0x8000):
+            # 全局快捷退出热键: Ctrl + Shift + Q
+            if vk == ord('Q') and (user32.GetAsyncKeyState(0x10) & 0x8000):
+                self.safe_exit()
+                return True
+            # 如果快捷键触发时有残余拼音，自动取消
+            if self.input_buffer:
+                self.input_buffer = ""
+                self.all_candidates = []
+                self.ui.hide()
+            return False
+
         # Shift 键切换中英文
         if vk in (VK_SHIFT, VK_LSHIFT, VK_RSHIFT):
             if not self.input_buffer:
@@ -495,7 +565,22 @@ class IMEController:
 
         # 如果输入缓冲区有内容
         if self.input_buffer:
-            # 空格或数字1 -> 上屏首选
+            # 翻页: = (0xBB), . (0xBE), PageDown (0x22) -> 下一页
+            if vk in (0xBB, 0xBE, 0x22):
+                total_pages = max(1, (len(self.all_candidates) + 4) // 5)
+                if self.cand_page + 1 < total_pages:
+                    self.cand_page += 1
+                    self._render_current_page()
+                return True
+
+            # 翻页: - (0xBD), , (0xBC), PageUp (0x21) -> 上一页
+            if vk in (0xBD, 0xBC, 0x21):
+                if self.cand_page > 0:
+                    self.cand_page -= 1
+                    self._render_current_page()
+                return True
+
+            # 空格或数字1 -> 上屏当前页首选
             if vk == VK_SPACE or vk == ord('1'):
                 if self.ui.current_candidates:
                     self.commit_word(self.ui.current_candidates[0])
@@ -512,6 +597,7 @@ class IMEController:
             if vk == VK_RETURN:
                 raw = self.input_buffer
                 self.input_buffer = ""
+                self.all_candidates = []
                 self.ui.hide()
                 threading.Thread(target=lambda: SendInputHelper.send_unicode_string(raw), daemon=True).start()
                 return True
@@ -519,17 +605,13 @@ class IMEController:
             # 退格键 -> 删减一个拼音字母
             if vk == VK_BACK:
                 self.input_buffer = self.input_buffer[:-1]
-                if self.input_buffer:
-                    self.sound.play()
-                    py_disp, cands = self.engine.query(self.input_buffer)
-                    self.ui.show_candidates(py_disp, cands)
-                else:
-                    self.ui.hide()
+                self.update_pinyin()
                 return True
 
             # Delete 键或 Esc 键 -> 取消当前拼音输入
             if vk in (VK_DELETE, VK_ESCAPE):
                 self.input_buffer = ""
+                self.all_candidates = []
                 self.ui.hide()
                 return True
 
@@ -537,9 +619,7 @@ class IMEController:
         if ord('A') <= vk <= ord('Z'):
             ch = chr(vk).lower()
             self.input_buffer += ch
-            self.sound.play()
-            py_disp, cands = self.engine.query(self.input_buffer)
-            self.ui.show_candidates(py_disp, cands)
+            self.update_pinyin()
             return True
 
         # 其他所有按键（包括没有拼音时的 Delete、Backspace、回车、方向键、标点符号等）一律放行给系统！
@@ -596,6 +676,12 @@ class IMEController:
 
 
 if __name__ == "__main__":
+    # 单例互斥体保护：防止重复启动多个进程导致底层键盘钩子冲突
+    MUTEX_NAME = "Local\\BDS_IME_SINGLE_INSTANCE_MUTEX"
+    _single_instance_mutex = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    if kernel32.GetLastError() == 183:  # 183 = ERROR_ALREADY_EXISTS
+        sys.exit(0)
+
     if not DB_PATH.exists():
         print("[-] 词库未就绪，正在准备...")
     app = IMEController()

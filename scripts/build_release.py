@@ -25,7 +25,7 @@ DIST_DIR = BASE_DIR / "dist"
 BUILD_DIR = BASE_DIR / "build"
 ASSETS_DIR = BASE_DIR / "assets"
 ICON_PATH = ASSETS_DIR / "app.ico"
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 
 def clean_previous_builds():

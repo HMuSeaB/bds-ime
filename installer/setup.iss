@@ -4,7 +4,7 @@
 ; ====================================================================
 
 #define MyAppName "BDS-IME"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "BDS Open Source Studio"
 #define MyAppURL "https://github.com/HMuSeaB/bds-ime"
 #define MyAppExeName "BDS-IME.exe"
