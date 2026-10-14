@@ -26,10 +26,29 @@ class BDSParser:
             raise FileNotFoundError(f"找不到皮肤文件: {bds_path}")
         self.zf = zipfile.ZipFile(self.bds_path, 'r')
         self.files = self.zf.namelist()
+        # 建立跨平台大小写不敏感与斜杠规范化索引 (杜绝 Res/ vs res/ 造成的匹配失败)
+        self.file_map = {f.lower().replace('\\', '/'): f for f in self.files}
         self.info = self._parse_info()
         self.styles = self._parse_styles()
         self.cand_cfg = self._parse_cand_cfg()
         self.til_cfg = self._parse_til_cfg()
+
+    def find_file(self, *candidates) -> str | None:
+        """大小写不敏感地按优先级查找压缩包内部文件"""
+        for c in candidates:
+            norm = c.lower().replace('\\', '/')
+            if norm in self.file_map:
+                return self.file_map[norm]
+        return None
+
+    def search_files_by_pattern(self, pattern: str) -> list[str]:
+        """按正则表达式模糊搜索压缩包内部文件"""
+        res = []
+        reg = re.compile(pattern, re.IGNORECASE)
+        for f in self.files:
+            if reg.search(f.replace('\\', '/')):
+                res.append(f)
+        return res
 
     def _read_text(self, filename: str) -> str:
         """安全读取压缩包内文本，自适应 UTF-8/GBK 编码与 BOM"""
@@ -47,8 +66,9 @@ class BDSParser:
             "style": "default",
             "author": "Metasequoia / BDS Community",
         }
-        if "Info.txt" in self.files:
-            text = self._read_text("Info.txt")
+        info_file = self.find_file("Info.txt", "info.ini", "skin.info")
+        if info_file:
+            text = self._read_text(info_file)
             for line in text.splitlines():
                 if "=" in line:
                     k, v = line.split("=", 1)
@@ -57,11 +77,14 @@ class BDSParser:
 
     def _parse_styles(self) -> dict:
         """解析 default.css (实际为 INI 结构) 中的颜色与切图映射"""
-        css_file = None
-        for candidate in ["res/default.css", "port/res/default.css", "land/res/default.css"]:
-            if candidate in self.files:
-                css_file = candidate
-                break
+        css_file = self.find_file(
+            "res/default.css", "port/res/default.css", "land/res/default.css", "default.css"
+        )
+        if not css_file:
+            # 模糊查找包含 default.css 的任何文件
+            matches = self.search_files_by_pattern(r'default\.css$')
+            if matches:
+                css_file = matches[0]
         if not css_file:
             return {}
 
@@ -85,11 +108,13 @@ class BDSParser:
 
     def _parse_cand_cfg(self) -> dict:
         """解析候选栏配置 (port/cand1.cnd)"""
-        cnd_file = None
-        for candidate in ["port/cand1.cnd", "land/cand1.cnd", "cand1.cnd"]:
-            if candidate in self.files:
-                cnd_file = candidate
-                break
+        cnd_file = self.find_file(
+            "port/cand1.cnd", "land/cand1.cnd", "cand1.cnd", "cand.cnd"
+        )
+        if not cnd_file:
+            matches = self.search_files_by_pattern(r'cand\d?\.cnd$')
+            if matches:
+                cnd_file = matches[0]
         if not cnd_file:
             return {}
 
@@ -113,11 +138,14 @@ class BDSParser:
 
     def _parse_til_cfg(self) -> dict:
         """解析 9-patch 切片文件 (cand.til / bj.til)"""
-        til_file = None
-        for candidate in ["port/res/cand.til", "res/cand.til", "land/res/cand.til", "port/res/bj.til", "res/bj.til"]:
-            if candidate in self.files:
-                til_file = candidate
-                break
+        til_file = self.find_file(
+            "port/res/cand.til", "res/cand.til", "land/res/cand.til",
+            "port/res/bj.til", "res/bj.til", "cand.til", "bj.til"
+        )
+        if not til_file:
+            matches = self.search_files_by_pattern(r'cand.*\.til$')
+            if matches:
+                til_file = matches[0]
         if not til_file:
             return {}
 
@@ -129,7 +157,7 @@ class BDSParser:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            m = re.match(r"^\[IMG(\d+)\]", line, re.IGNORECASE)
+            m = re.match(r"^\[(?:IMG)?(\d+)\]", line, re.IGNORECASE)
             if m:
                 curr_img = int(m.group(1))
                 tiles[curr_img] = {}
@@ -140,25 +168,54 @@ class BDSParser:
         return tiles
 
     @staticmethod
-    def argb_to_css(hex_str: str, default: str = "#333333") -> str:
+    def parse_color_to_rgb(color_str: str) -> tuple[int, int, int, float]:
+        """
+        解析任意格式的颜色字符串为 (r, g, b, alpha)
+        支持: #RGB, #RRGGBB, #AARRGGBB, rgba(r,g,b,a), rgb(r,g,b)
+        """
+        if not color_str:
+            return (40, 40, 40, 1.0)
+        c = color_str.strip()
+        # rgba(r, g, b, a)
+        m_rgba = re.match(r'rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)', c, re.I)
+        if m_rgba:
+            r = max(0, min(255, int(m_rgba.group(1))))
+            g = max(0, min(255, int(m_rgba.group(2))))
+            b = max(0, min(255, int(m_rgba.group(3))))
+            a = float(m_rgba.group(4)) if m_rgba.group(4) else 1.0
+            return (r, g, b, a)
+
+        hex_c = c.lstrip("#")
+        try:
+            if len(hex_c) == 8:
+                a = int(hex_c[0:2], 16) / 255.0
+                r = int(hex_c[2:4], 16)
+                g = int(hex_c[4:6], 16)
+                b = int(hex_c[6:8], 16)
+                return (r, g, b, a)
+            elif len(hex_c) == 6:
+                r = int(hex_c[0:2], 16)
+                g = int(hex_c[2:4], 16)
+                b = int(hex_c[4:6], 16)
+                return (r, g, b, 1.0)
+            elif len(hex_c) == 3:
+                r = int(hex_c[0] * 2, 16)
+                g = int(hex_c[1] * 2, 16)
+                b = int(hex_c[2] * 2, 16)
+                return (r, g, b, 1.0)
+        except Exception:
+            pass
+        return (40, 40, 40, 1.0)
+
+    @classmethod
+    def argb_to_css(cls, hex_str: str, default: str = "#333333") -> str:
         """转换 AARRGGBB 或 RRGGBB 为 CSS 格式 (#RRGGBB 或 rgba)"""
         if not hex_str:
             return default
-        hex_str = hex_str.strip().lstrip("#")
-        try:
-            if len(hex_str) == 8:
-                a = int(hex_str[0:2], 16) / 255.0
-                r = int(hex_str[2:4], 16)
-                g = int(hex_str[4:6], 16)
-                b = int(hex_str[6:8], 16)
-                if a >= 0.99:
-                    return f"#{hex_str[2:8].lower()}"
-                return f"rgba({r}, {g}, {b}, {a:.2f})"
-            elif len(hex_str) == 6:
-                return f"#{hex_str.lower()}"
-        except Exception:
-            pass
-        return default
+        r, g, b, a = cls.parse_color_to_rgb(hex_str)
+        if a >= 0.99:
+            return f"#{r:02x}{g:02x}{b:02x}"
+        return f"rgba({r}, {g}, {b}, {a:.2f})"
 
     def get_color(self, style_id: str, field: str = "NM_COLOR", default: str = "#222222") -> str:
         s = self.styles.get(str(style_id), {})
@@ -166,48 +223,85 @@ class BDSParser:
         return self.argb_to_css(val, default)
 
     def extract_cand_image(self) -> tuple[bytes | None, str]:
-        """提取候选框切图 (cand.png 或备用图片)"""
-        for candidate in ["port/res/cand.png", "res/cand.png", "land/res/cand.png", "res/bj.png"]:
-            if candidate in self.files:
-                return self.zf.read(candidate), candidate
+        """提取候选框切图 (支持多级目录与大小写模糊查找)"""
+        candidates = [
+            "port/res/cand.png", "res/cand.png", "land/res/cand.png", "res/bj.png",
+            "port/res/cand.9.png", "res/cand.9.png", "cand.png", "res/cand_bg.png"
+        ]
+        for c in candidates:
+            real_f = self.find_file(c)
+            if real_f:
+                return self.zf.read(real_f), real_f
+
+        # 若未命中精确名，则匹配包内包含 cand 且以 .png 结尾的文件
+        matches = self.search_files_by_pattern(r'cand.*\.png$')
+        if matches:
+            return self.zf.read(matches[0]), matches[0]
+
         return None, ""
 
     def extract_mascot_image(self) -> tuple[bytes | None, str]:
-        """提取装饰图/立绘图 (demo.png / back.png)"""
-        for candidate in ["demo.png", "res/back.png"]:
-            if candidate in self.files:
-                return self.zf.read(candidate), candidate
+        """提取装饰图/立绘图 (demo.png / back.png / logo.png)"""
+        candidates = [
+            "demo.png", "preview.png", "port/res/back.png", "res/back.png",
+            "land/res/back.png", "res/logo.png", "logo.png", "icon.png"
+        ]
+        for c in candidates:
+            real_f = self.find_file(c)
+            if real_f:
+                return self.zf.read(real_f), real_f
+
+        matches = self.search_files_by_pattern(r'(?:demo|preview|back|mascot).*\.png$')
+        if matches:
+            return self.zf.read(matches[0]), matches[0]
+
         return None, ""
 
     def calculate_9patch_slices(self) -> dict:
         """
         计算 9-patch 的 CSS border-image 切割宽度。
         SOURCE_RECT=x,y,w,h; INNER_RECT=ix,iy,iw,ih
+        增加防越界保护，防止异常参数造成 CSS 渲染崩溃。
         """
-        img1 = self.til_cfg.get(1, {})
-        source = img1.get("SOURCE_RECT")
-        inner = img1.get("INNER_RECT")
+        target_img = self.til_cfg.get(1)
+        if not target_img or "SOURCE_RECT" not in target_img:
+            for k, v in self.til_cfg.items():
+                if "SOURCE_RECT" in v and "INNER_RECT" in v:
+                    target_img = v
+                    break
 
-        if source and inner:
-            try:
-                sx, sy, sw, sh = map(int, source.split(","))
-                ix, iy, iw, ih = map(int, inner.split(","))
-                top = iy - sy
-                left = ix - sx
-                bottom = sh - (top + ih)
-                right = sw - (left + iw)
-                return {
-                    "top": max(1, top),
-                    "right": max(1, right),
-                    "bottom": max(1, bottom),
-                    "left": max(1, left),
-                    "w": sw,
-                    "h": sh,
-                    "has_9patch": True
-                }
-            except Exception:
-                pass
-        
+        if target_img:
+            source = target_img.get("SOURCE_RECT")
+            inner = target_img.get("INNER_RECT")
+            if source and inner:
+                try:
+                    sx, sy, sw, sh = map(int, source.split(","))
+                    ix, iy, iw, ih = map(int, inner.split(","))
+                    top = max(1, iy - sy)
+                    left = max(1, ix - sx)
+                    bottom = max(1, sh - (top + ih))
+                    right = max(1, sw - (left + iw))
+
+                    # 越界防崩溃保护：切片不可超过图片尺寸的 80%
+                    if top + bottom >= sh:
+                        top = min(top, max(1, sh // 3))
+                        bottom = min(bottom, max(1, sh // 3))
+                    if left + right >= sw:
+                        left = min(left, max(1, sw // 3))
+                        right = min(right, max(1, sw // 3))
+
+                    return {
+                        "top": top,
+                        "right": right,
+                        "bottom": bottom,
+                        "left": left,
+                        "w": sw,
+                        "h": sh,
+                        "has_9patch": True
+                    }
+                except Exception:
+                    pass
+
         # 默认回退 12px 切片
         return {"top": 12, "right": 12, "bottom": 12, "left": 12, "w": 100, "h": 100, "has_9patch": False}
 
@@ -449,16 +543,16 @@ width_dip = 60
 align = "right"
 """
 
-        name = self.info.get("name", skin_id)
-        author = self.info.get("author", "BDS Community")
+        safe_name = str(self.info.get("name", skin_id)).replace('\\', '\\\\').replace('"', '\\"')
+        safe_author = str(self.info.get("author", "BDS Community")).replace('\\', '\\\\').replace('"', '\\"')
 
         return f"""# 水杉输入法 (Metasequoia IME) 皮肤配置规范
-# 自动生成自百度输入法官方皮肤包: {name}
+# 自动生成自百度输入法官方皮肤包: {safe_name}
 schema_version = 1
 id = "{skin_id}"
-name = "{name}"
+name = "{safe_name}"
 version = "1.0.0"
-author = "{author}"
+author = "{safe_author}"
 base = "fluent"
 
 [supports]
@@ -487,14 +581,20 @@ border = "#383838"
 """
 
     def generate_rime_weasel_yaml(self) -> str:
-        """生成 RIME 小狼毫 weasel.custom.yaml 风格的配色配置"""
-        def to_bgr(css_hex):
-            h = css_hex.lstrip("#")
-            if len(h) == 6:
-                return f"0x{h[4:6]}{h[2:4]}{h[0:2]}"
-            return "0x000000"
+        """生成 RIME 小狼毫 weasel.custom.yaml 风格的配色配置 (修复透明度导致的 0x000000 纯黑 Bug)"""
+        def to_bgr(color_str):
+            r, g, b, a = self.parser.parse_color_to_rgb(color_str)
+            if a < 0.98:
+                alpha_byte = int(a * 255)
+                return f"0x{alpha_byte:02x}{b:02x}{g:02x}{r:02x}"
+            return f"0x{b:02x}{g:02x}{r:02x}"
 
-        scheme_id = "bds_" + re.sub(r"[^\w]", "_", self.info.get("name", "theme")).lower()
+        ascii_name = re.sub(r'[^a-zA-Z0-9_]', '_', self.info.get("name", "theme"))
+        ascii_name = re.sub(r'_+', '_', ascii_name).strip('_').lower()
+        if not ascii_name:
+            ascii_name = "theme"
+        scheme_id = f"bds_{ascii_name}"
+
         return f"""# RIME 小狼毫配色方案 - {self.info.get('name')}
 # 添加到 %APPDATA%\\Rime\\weasel.custom.yaml
 patch:
@@ -517,6 +617,23 @@ patch:
     hilited_candidate_text_color: {to_bgr(self.first_color)}
     hilited_candidate_back_color: 0x22888888
 """
+
+    def generate_bds_ime_skin_json(self) -> dict:
+        """生成与 BDS-IME 桌面输入法本体原生级兼容的热换肤 JSON 配置"""
+        return {
+            "name": self.info.get("name", "BDS Theme"),
+            "surfaceBg": self.fallback_bg,
+            "opacity": 0.96,
+            "colors": {
+                "border": self.first_color,
+                "text": self.text_color,
+                "accent": self.first_color,
+                "pinyin": "#6c757d",
+                "selectedBg": "#ffe4e9" if self.fallback_bg != "#222222" else "#333333"
+            },
+            "slices": self.slices
+        }
+
 
     def generate_interactive_preview_html(self) -> str:
         """生成完全独立的交互式打字仿真预览 HTML (单文件内联 Base64)"""
@@ -972,13 +1089,20 @@ patch:
       }}
 
       if (currentInput.length > 0) {{
-        if (e.key === " " || e.key === "Enter") {{
+        if (e.key === " ") {{
           e.preventDefault();
           const firstCand = imeCandList.querySelector(".cand-item.active");
           if (firstCand) {{
             const text = firstCand.textContent.replace(/^\\d+\\.\\s*/, "");
             commitWord(text);
           }}
+          return;
+        }}
+
+        if (e.key === "Enter") {{
+          e.preventDefault();
+          // 回车键直接上屏原始拼音英文 (符合所有 Windows 标准输入法规范)
+          commitWord(currentInput);
           return;
         }}
 
@@ -1018,7 +1142,7 @@ def generate_safe_skin_id(theme_name: str) -> str:
     return f"bds_{clean.lower()}"
 
 
-def process_bds(bds_path: str, output_base_dir: str):
+def process_bds(bds_path: str, output_base_dir: str, apply_to_ime: bool = False):
     """处理单个 BDS 文件并生成整套皮肤资源与水杉输入法官方主题包"""
     parser = BDSParser(bds_path)
     theme_name = parser.info.get("name", Path(bds_path).stem)
@@ -1050,7 +1174,7 @@ def process_bds(bds_path: str, output_base_dir: str):
     with open(out_dir / "candidate_window.html", "w", encoding="utf-8") as f:
         f.write(msime_html)
 
-    # 4. 生成 RIME 小狼毫配色方案
+    # 4. 生成 RIME 小狼毫配色方案 (安全 BGR 十六进制)
     rime_yaml = gen.generate_rime_weasel_yaml()
     with open(out_dir / "weasel.custom.yaml", "w", encoding="utf-8") as f:
         f.write(rime_yaml)
@@ -1094,12 +1218,37 @@ def process_bds(bds_path: str, output_base_dir: str):
         except Exception as e:
             print(f"    [!] 自动同步到水杉皮肤目录失败: {e}")
 
+    # 8. 生成 BDS-IME 原生输入法专属配置 (skin.json) 并输出到 win11_native_skins
+    bds_skin_data = gen.generate_bds_ime_skin_json()
+    with open(out_dir / "skin.json", "w", encoding="utf-8") as f:
+        json.dump(bds_skin_data, f, ensure_ascii=False, indent=2)
+
+    native_skins_dir = Path("win11_native_skins") / safe_folder
+    native_skins_dir.mkdir(parents=True, exist_ok=True)
+    with open(native_skins_dir / "skin.json", "w", encoding="utf-8") as f:
+        json.dump(bds_skin_data, f, ensure_ascii=False, indent=2)
+    if cand_bytes:
+        with open(native_skins_dir / "cand.png", "wb") as f:
+            f.write(cand_bytes)
+
+    # 9. 若指定 --apply，直接激活为当前运行输入法皮肤
+    applied = False
+    if apply_to_ime:
+        try:
+            from bds_ime.config import save_skin_config
+            save_skin_config(bds_skin_data)
+            applied = True
+            print(f"    [★] 已即时热应用为 BDS-IME 当前桌面皮肤！")
+        except Exception as e:
+            print(f"    [!] 热应用皮肤失败: {e}")
+
     print(f"[+] 成功转换: {theme_name}")
     print(f"    - 目标目录: {out_dir}")
     print(f"    - 水杉输入法 HTML/CSS: {out_dir / 'candidate_window.html'}")
     print(f"    - 小狼毫 YAML 配色: {out_dir / 'weasel.custom.yaml'}")
     print(f"    - 交互式打字预览: {out_dir / 'interactive_preview.html'}")
     print(f"    - 水杉官方皮肤包 (skin.toml): {msime_pkg_dir}")
+    print(f"    - BDS-IME 原生皮肤 (skin.json): {native_skins_dir / 'skin.json'}")
     if installed_path:
         print(f"    - [已就绪] 自动安装到水杉目录: {installed_path}")
 
@@ -1116,6 +1265,7 @@ def process_bds(bds_path: str, output_base_dir: str):
         "has_art": bool(demo_bytes),
         "text_color": gen.text_color,
         "first_color": gen.first_color,
+        "applied": applied
     }
 
 
@@ -1358,10 +1508,13 @@ def generate_index_dashboard(themes: list, output_base_dir: str):
 
 if __name__ == "__main__":
     out_base = "converted_themes"
-    if len(sys.argv) > 1:
-        target_bds = sys.argv[1]
-        out_base = sys.argv[2] if len(sys.argv) > 2 else "converted_themes"
-        res = process_bds(target_bds, out_base)
+    args = [a for a in sys.argv[1:] if a != "--apply"]
+    apply_flag = "--apply" in sys.argv
+
+    if args:
+        target_bds = args[0]
+        out_base = args[1] if len(args) > 1 else "converted_themes"
+        res = process_bds(target_bds, out_base, apply_to_ime=apply_flag)
         generate_index_dashboard([res], out_base)
     else:
         # 默认处理当前目录下所有 .bds 文件
@@ -1372,7 +1525,8 @@ if __name__ == "__main__":
         else:
             converted = []
             for bds in bds_files:
-                res = process_bds(str(bds), out_base)
+                res = process_bds(str(bds), out_base, apply_to_ime=apply_flag)
                 converted.append(res)
             generate_index_dashboard(converted, out_base)
+
 
