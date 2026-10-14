@@ -9,6 +9,57 @@ import tkinter as tk
 user32 = ctypes.windll.user32
 
 
+class GUITHREADINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("hwndActive", wintypes.HWND),
+        ("hwndFocus", wintypes.HWND),
+        ("hwndCapture", wintypes.HWND),
+        ("hwndMenuOwner", wintypes.HWND),
+        ("hwndMoveSize", wintypes.HWND),
+        ("hwndCaret", wintypes.HWND),
+        ("rcCaret", wintypes.RECT),
+    ]
+
+
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+user32.GetGUIThreadInfo.argtypes = [wintypes.DWORD, ctypes.POINTER(GUITHREADINFO)]
+user32.GetGUIThreadInfo.restype = wintypes.BOOL
+user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+user32.ClientToScreen.restype = wintypes.BOOL
+
+
+def get_smart_anchor_position():
+    """
+    智能获取当前前台活动窗口的文字输入光标 (Caret) 绝对物理坐标
+    完美跟随各类输入框 (记事本、IDE、聊天窗口)；若目标窗口屏蔽 Caret 则平滑回退至鼠标位置
+    """
+    try:
+        fg_hwnd = user32.GetForegroundWindow()
+        if fg_hwnd:
+            pid = wintypes.DWORD()
+            tid = user32.GetWindowThreadProcessId(fg_hwnd, ctypes.byref(pid))
+            if tid:
+                gti = GUITHREADINFO()
+                gti.cbSize = ctypes.sizeof(GUITHREADINFO)
+                if user32.GetGUIThreadInfo(tid, ctypes.byref(gti)):
+                    caret_hwnd = gti.hwndCaret or gti.hwndFocus or fg_hwnd
+                    rc = gti.rcCaret
+                    if (rc.right > rc.left or rc.bottom > rc.top) and (rc.left != 0 or rc.top != 0):
+                        pt = wintypes.POINT(rc.left, rc.bottom)
+                        if user32.ClientToScreen(caret_hwnd, ctypes.byref(pt)):
+                            return pt.x, pt.y
+    except Exception:
+        pass
+
+    # 优雅回退：物理鼠标位置
+    pt = wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x + 10, pt.y + 15
+
+
 class NativeCandidateWindow:
     """现代化悬浮候选窗 (Tkinter 原生级硬件加速悬浮窗)"""
     def __init__(self, on_commit_callback):
@@ -118,18 +169,22 @@ class NativeCandidateWindow:
                 lbl.config(text="", cursor="default")
                 lbl.unbind("<Button-1>")
 
-        # 光标位置跟随
-        pt = wintypes.POINT()
-        user32.GetCursorPos(ctypes.byref(pt))
-        x = pt.x + 15
-        y = pt.y + 25
+        # 智能真光标跟踪与屏幕防遮挡定位
+        anchor_x, anchor_y = get_smart_anchor_position()
+        x = anchor_x + 2
+        y = anchor_y + 20
 
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        if x + 400 > sw:
-            x = sw - 410
-        if y + 80 > sh:
-            y = pt.y - 80
+        estimated_w = max(320, len(candidates) * 80 + 50)
+        estimated_h = 75
+
+        # 右边缘防超出
+        if x + estimated_w > sw:
+            x = max(10, sw - estimated_w - 15)
+        # 下边缘防超出 (自动向上翻转至光标上方)
+        if y + estimated_h > sh:
+            y = max(10, anchor_y - estimated_h - 10)
 
         self.root.geometry(f"+{x}+{y}")
         self.root.deiconify()
@@ -138,3 +193,4 @@ class NativeCandidateWindow:
         self.root.withdraw()
         self.current_candidates.clear()
         self.current_pinyin = ""
+

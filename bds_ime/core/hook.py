@@ -45,6 +45,18 @@ VK_OEM_PERIOD = 0xBE
 VK_PRIOR = 0x21
 VK_NEXT = 0x22
 
+# 小键盘数字键
+VK_NUMPAD0 = 0x60
+VK_NUMPAD1 = 0x61
+VK_NUMPAD2 = 0x62
+VK_NUMPAD3 = 0x63
+VK_NUMPAD4 = 0x64
+VK_NUMPAD5 = 0x65
+VK_NUMPAD6 = 0x66
+VK_NUMPAD7 = 0x67
+VK_NUMPAD8 = 0x68
+VK_NUMPAD9 = 0x69
+
 
 class KBDLLHOOKSTRUCT(ctypes.Structure):
     _fields_ = [
@@ -58,14 +70,16 @@ class KBDLLHOOKSTRUCT(ctypes.Structure):
 
 HOOKPROC = ctypes.WINFUNCTYPE(wintypes.LPARAM, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 
 
 class KeyboardHookManager:
-    """管理全局键盘钩子线程与按键过滤分发 (支持 KeyDown 与 KeyUp 全生命周期)"""
+    """管理全局键盘钩子线程与按键过滤分发 (支持 KeyDown 与 KeyUp 全生命周期及安全退出)"""
     def __init__(self, key_handler_callback):
         self.handler = key_handler_callback
         self.h_hook = None
         self._hook_ref = None
+        self.thread_id = None
 
     def start(self):
         def hook_proc(nCode, wParam, lParam):
@@ -85,13 +99,27 @@ class KeyboardHookManager:
         self._hook_ref = HOOKPROC(hook_proc)
 
         def worker():
+            self.thread_id = kernel32.GetCurrentThreadId()
             self.h_hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._hook_ref, None, 0)
             msg = wintypes.MSG()
-            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
             if self.h_hook:
                 user32.UnhookWindowsHookEx(self.h_hook)
+                self.h_hook = None
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
+
+    def stop(self):
+        """显式安全卸载底层全局钩子"""
+        try:
+            if self.thread_id:
+                user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)  # WM_QUIT
+            if self.h_hook:
+                user32.UnhookWindowsHookEx(self.h_hook)
+                self.h_hook = None
+        except Exception:
+            pass
+

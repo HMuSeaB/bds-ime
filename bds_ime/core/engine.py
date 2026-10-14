@@ -144,14 +144,23 @@ class PinyinEngine:
         return result
 
     def learn_word(self, word: str, pinyin: str):
-        """用户选词调频自学习"""
+        """用户选词调频自学习 (已有词自动提频 +50，新词/长句自动入库记忆)"""
         try:
             self._cache.clear()
+            compact = pinyin.replace("'", "").strip()
+            if not compact or not word:
+                return
             cur = self.conn.cursor()
             cur.execute(
                 "UPDATE words SET weight = weight + 50 WHERE word = ? AND pinyin = ?",
-                (word, pinyin.replace("'", ""))
+                (word, compact)
             )
+            if cur.rowcount == 0:
+                cur.execute(
+                    "INSERT OR IGNORE INTO words (pinyin, word, weight) VALUES (?, ?, 100)",
+                    (compact, word)
+                )
             self.conn.commit()
         except Exception:
             pass
+

@@ -25,9 +25,11 @@ from bds_ime.core.hook import (
     VK_SHIFT, VK_LSHIFT, VK_RSHIFT, VK_CONTROL, VK_LCONTROL, VK_RCONTROL,
     VK_MENU, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN, VK_CAPITAL,
     VK_SPACE, VK_RETURN, VK_BACK, VK_ESCAPE, VK_DELETE,
-    VK_OEM_MINUS, VK_OEM_PLUS, VK_OEM_COMMA, VK_OEM_PERIOD, VK_PRIOR, VK_NEXT
+    VK_OEM_MINUS, VK_OEM_PLUS, VK_OEM_COMMA, VK_OEM_PERIOD, VK_PRIOR, VK_NEXT,
+    VK_NUMPAD0, VK_NUMPAD1, VK_NUMPAD2, VK_NUMPAD3, VK_NUMPAD4, VK_NUMPAD5,
+    VK_NUMPAD6, VK_NUMPAD7, VK_NUMPAD8, VK_NUMPAD9
 )
-from bds_ime.core.input_sender import SendInputHelper
+from bds_ime.core.input_sender import SendInputHelper, SendInputQueue
 from bds_ime.ui.native_candidate import NativeCandidateWindow
 from bds_ime.studio.server import EmbeddedStudioServer
 
@@ -119,7 +121,7 @@ class BDSInputMethodApp:
 
     def commit_word(self, word: str):
         self.sound.play()
-        # 剥离大模型前缀
+        # 剥离大模型标识前缀
         if word.startswith("🤖 "):
             word = word[3:].strip()
         self.engine.learn_word(word, self.input_buffer)
@@ -128,10 +130,8 @@ class BDSInputMethodApp:
         self.cand_page = 0
         self.ui.hide()
 
-        def do_send():
-            time.sleep(0.015)
-            SendInputHelper.send_unicode_string(word)
-        threading.Thread(target=do_send, daemon=True).start()
+        # 统一使用严格串行化 FIFO 队列上屏，杜绝高频连击并发乱序
+        SendInputQueue.enqueue(word, delay_before=0.015)
 
     def toggle_mode(self):
         self.is_chinese_mode = not self.is_chinese_mode
@@ -149,6 +149,11 @@ class BDSInputMethodApp:
 
     def safe_exit(self):
         try:
+            if hasattr(self, 'hook_mgr'):
+                self.hook_mgr.stop()
+            if hasattr(self, '_mutex') and self._mutex:
+                kernel32.CloseHandle(self._mutex)
+                self._mutex = None
             self.ui.root.quit()
         except Exception:
             pass
@@ -254,12 +259,23 @@ class BDSInputMethodApp:
                     self.commit_word(self.input_buffer)
                 return True
 
-            # 数字键 1~5 -> 选词上屏
+            # 数字键 1~5 (支持主键盘与小键盘) -> 选词上屏
+            chosen_idx = None
             if ord('1') <= vk <= ord('5'):
-                idx = (vk - ord('1')) + (self.cand_page * 5)
-                if idx < len(self.all_candidates):
-                    self.commit_word(self.all_candidates[idx])
-                    return True
+                chosen_idx = vk - ord('1')
+            elif VK_NUMPAD1 <= vk <= VK_NUMPAD5:
+                chosen_idx = vk - VK_NUMPAD1
+
+            if chosen_idx is not None:
+                target_idx = chosen_idx + (self.cand_page * 5)
+                if target_idx < len(self.all_candidates):
+                    self.commit_word(self.all_candidates[target_idx])
+                return True
+
+            # 数字键 6~9 / 0 (拼音未决时直接拦截，防止数字渗漏污染输入框)
+            if (ord('6') <= vk <= ord('9') or vk == ord('0') or
+                VK_NUMPAD6 <= vk <= VK_NUMPAD9 or vk == VK_NUMPAD0):
+                return True
 
             # 翻页键 (- / =, , / ., PageUp / PageDown)
             if vk in (VK_OEM_MINUS, VK_OEM_COMMA, VK_PRIOR):
@@ -275,22 +291,22 @@ class BDSInputMethodApp:
                     self._render_current_page()
                 return True
 
-            # 回车键 -> 直接上屏原始英文字母
+            # 回车键 -> 直接上屏原始英文字母 (走 FIFO 串行队列)
             if vk == VK_RETURN:
                 raw = self.input_buffer
                 self.input_buffer = ""
                 self.all_candidates = []
                 self.ui.hide()
-                threading.Thread(target=lambda: SendInputHelper.send_unicode_string(raw), daemon=True).start()
+                SendInputQueue.enqueue(raw, delay_before=0.01)
                 return True
 
-            # 退格键
+            # 退格键 (Backspace)
             if vk == VK_BACK:
                 self.input_buffer = self.input_buffer[:-1]
                 self.update_pinyin()
                 return True
 
-            # Delete / Esc
+            # Delete / Esc (清空未决输入并关闭候选窗口，消费该事件)
             if vk in (VK_DELETE, VK_ESCAPE):
                 self.input_buffer = ""
                 self.all_candidates = []
@@ -327,7 +343,7 @@ class BDSInputMethodApp:
                 punc = "～"
 
             if punc:
-                threading.Thread(target=lambda: SendInputHelper.send_unicode_string(punc), daemon=True).start()
+                SendInputQueue.enqueue(punc, delay_before=0.01)
                 return True
 
         return False
