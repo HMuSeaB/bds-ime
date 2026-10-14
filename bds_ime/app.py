@@ -21,9 +21,11 @@ from bds_ime.core.sound import SoundHelper
 from bds_ime.core.ai_client import AICandidateHelper
 from bds_ime.core.hook import (
     KeyboardHookManager,
-    VK_SHIFT, VK_LSHIFT, VK_RSHIFT, VK_SPACE, VK_RETURN, VK_BACK,
-    VK_ESCAPE, VK_DELETE, VK_OEM_MINUS, VK_OEM_PLUS,
-    VK_OEM_COMMA, VK_OEM_PERIOD, VK_PRIOR, VK_NEXT
+    WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    VK_SHIFT, VK_LSHIFT, VK_RSHIFT, VK_CONTROL, VK_LCONTROL, VK_RCONTROL,
+    VK_MENU, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN, VK_CAPITAL,
+    VK_SPACE, VK_RETURN, VK_BACK, VK_ESCAPE, VK_DELETE,
+    VK_OEM_MINUS, VK_OEM_PLUS, VK_OEM_COMMA, VK_OEM_PERIOD, VK_PRIOR, VK_NEXT
 )
 from bds_ime.core.input_sender import SendInputHelper
 from bds_ime.ui.native_candidate import NativeCandidateWindow
@@ -56,6 +58,10 @@ class BDSInputMethodApp:
         self.pinyin_disp = ""
         self.is_chinese_mode = True
         self.reload_counter = 0
+
+        # Shift 按键全周期状态跟踪 (防止组合键误切中英文)
+        self.shift_pressed = False
+        self.shift_combo_used = False
 
         # 5. UI 呈现层
         self.event_queue = queue.Queue()
@@ -148,37 +154,95 @@ class BDSInputMethodApp:
             pass
         os._exit(0)
 
-    def handle_key(self, vk: int) -> bool:
-        """全局按键过滤与处理"""
-        # 1. 组合快捷键与修饰键绝对穿透：Ctrl、Alt、Win 放行给操作系统
-        if (user32.GetAsyncKeyState(0x11) & 0x8000) or \
-           (user32.GetAsyncKeyState(0x12) & 0x8000) or \
-           (user32.GetAsyncKeyState(0x5B) & 0x8000) or \
-           (user32.GetAsyncKeyState(0x5C) & 0x8000):
-            # 全局快捷退出热键: Ctrl + Shift + Q
-            if vk == ord('Q') and (user32.GetAsyncKeyState(0x10) & 0x8000):
+    def handle_key(self, event_type: int, vk: int) -> bool:
+        """
+        工业级全局按键过滤与快捷键安全调度引擎
+        确保所有系统组合键 (Ctrl/Alt/Win/Shift组合) 绝对安全无冲突！
+        """
+        # =========================================================
+        # 1. KEYUP 事件处理：精确判定 Shift 单按松开切换中英文
+        # =========================================================
+        if event_type in (WM_KEYUP, WM_SYSKEYUP):
+            if vk in (VK_SHIFT, VK_LSHIFT, VK_RSHIFT):
+                # 只有当用户没有配合其他任何按键、单纯按下并松开 Shift 时，才切换中英文
+                if self.shift_pressed and not self.shift_combo_used:
+                    self.toggle_mode()
+                self.shift_pressed = False
+                self.shift_combo_used = False
+            return False  # KEYUP 事件一律放行给操作系统
+
+        # =========================================================
+        # 2. 全方位修饰键状态实时判定 (包含左右分离物理键)
+        # =========================================================
+        ctrl_active = bool((user32.GetAsyncKeyState(VK_CONTROL) & 0x8000) or
+                           (user32.GetAsyncKeyState(VK_LCONTROL) & 0x8000) or
+                           (user32.GetAsyncKeyState(VK_RCONTROL) & 0x8000))
+        alt_active = bool((user32.GetAsyncKeyState(VK_MENU) & 0x8000) or
+                          (user32.GetAsyncKeyState(VK_LMENU) & 0x8000) or
+                          (user32.GetAsyncKeyState(VK_RMENU) & 0x8000))
+        win_active = bool((user32.GetAsyncKeyState(VK_LWIN) & 0x8000) or
+                          (user32.GetAsyncKeyState(VK_RWIN) & 0x8000))
+        shift_active = bool((user32.GetAsyncKeyState(VK_SHIFT) & 0x8000) or
+                            (user32.GetAsyncKeyState(VK_LSHIFT) & 0x8000) or
+                            (user32.GetAsyncKeyState(VK_RSHIFT) & 0x8000))
+
+        # =========================================================
+        # 3. 组合快捷键最高优先级免死穿透 (Ctrl / Alt / Win)
+        # =========================================================
+        if ctrl_active or alt_active or win_active:
+            # 内部专用热键: Ctrl + Shift + Q (安全退出)
+            if ctrl_active and shift_active and vk == ord('Q'):
                 self.safe_exit()
                 return True
-            # 打开皮肤创作工坊热键: Ctrl + Shift + S
-            if vk == ord('S') and (user32.GetAsyncKeyState(0x10) & 0x8000):
+            # 内部专用热键: Ctrl + Shift + S (呼出皮肤工坊)
+            if ctrl_active and shift_active and vk == ord('S'):
                 self.open_studio()
                 return True
+
+            # 任何其他系统快捷键 (如 Ctrl+C, Ctrl+V, Ctrl+A, Ctrl+Z, Alt+Tab, Win+D, Win+V, Win+. 等)
+            # 100% 绝对不拦截，放行给宿主系统！
             if self.input_buffer:
                 self.input_buffer = ""
                 self.all_candidates = []
                 self.ui.hide()
             return False
 
-        # Shift 切换中英文
+        # =========================================================
+        # 4. Shift 按下状态跟踪
+        # =========================================================
         if vk in (VK_SHIFT, VK_LSHIFT, VK_RSHIFT):
-            if not self.input_buffer:
-                self.toggle_mode()
+            self.shift_pressed = True
+            self.shift_combo_used = False
+            return False  # 按下 Shift 时不拦截、不立即切换，等待 KeyUp
+
+        # 用户按住了 Shift 配合其他键 (例如 Shift + A, Shift + 1)
+        if shift_active:
+            self.shift_combo_used = True
+            # 如果按住 Shift + 字母 A~Z：用户的明确意图是输入大写英文字母！
+            if ord('A') <= vk <= ord('Z'):
+                if self.input_buffer:
+                    # 提交已有拼音
+                    self.commit_word(self.input_buffer)
+                # 绝对放行给系统输入大写英文字母，严禁进拼音缓冲区！
+                return False
+
+        # =========================================================
+        # 5. 大写锁定 (Caps Lock) 状态检测
+        # =========================================================
+        caps_locked = bool(user32.GetKeyState(VK_CAPITAL) & 1)
+        if caps_locked:
+            # 大写锁定开启时，字母全部直接放行给系统输入大写英文！
             return False
 
+        # =========================================================
+        # 6. 英文输入模式直接放行
+        # =========================================================
         if not self.is_chinese_mode:
             return False
 
-        # 缓冲区有内容时的处理
+        # =========================================================
+        # 7. 中文拼音缓冲区有内容时的交互
+        # =========================================================
         if self.input_buffer:
             # 空格 -> 选中第 1 个候选词上屏
             if vk == VK_SPACE:
@@ -233,30 +297,33 @@ class BDSInputMethodApp:
                 self.ui.hide()
                 return True
 
-        # 输入字母 A~Z
+        # =========================================================
+        # 8. 拼音字母输入 (仅限未按住 Shift 时的 A~Z)
+        # =========================================================
         if ord('A') <= vk <= ord('Z'):
             ch = chr(vk).lower()
             self.input_buffer += ch
             self.update_pinyin()
             return True
 
-        # 中文全角常用标点符号自动映射 (当无未决拼音时生效)
+        # =========================================================
+        # 9. 中文全角标点符号自动映射 (仅在无未决拼音时生效)
+        # =========================================================
         if not self.input_buffer and self.is_chinese_mode:
-            is_shift = bool(user32.GetAsyncKeyState(0x10) & 0x8000)
             punc = None
             if vk == VK_OEM_COMMA:
-                punc = "《" if is_shift else "，"
+                punc = "《" if shift_active else "，"
             elif vk == VK_OEM_PERIOD:
-                punc = "》" if is_shift else "。"
+                punc = "》" if shift_active else "。"
             elif vk == 0xBF:  # VK_OEM_2 (/ ?)
-                punc = "？" if is_shift else "、"
+                punc = "？" if shift_active else "、"
             elif vk == 0xBA:  # VK_OEM_1 (; :)
-                punc = "：" if is_shift else "；"
-            elif vk == ord('1') and is_shift:
+                punc = "：" if shift_active else "；"
+            elif vk == ord('1') and shift_active:
                 punc = "！"
-            elif vk == ord('6') and is_shift:
+            elif vk == ord('6') and shift_active:
                 punc = "……"
-            elif vk == 0xC0 and is_shift:  # VK_OEM_3 (~ `)
+            elif vk == 0xC0 and shift_active:  # VK_OEM_3 (~ `)
                 punc = "～"
 
             if punc:
