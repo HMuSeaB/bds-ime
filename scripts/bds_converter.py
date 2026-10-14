@@ -15,6 +15,7 @@ import json
 import base64
 import struct
 import zipfile
+import shutil
 from pathlib import Path
 
 
@@ -421,6 +422,68 @@ body {{
   </div>
 </body>
 </html>
+"""
+
+    def generate_msime_skin_toml(self, skin_id: str, has_bg: bool = True, has_deco: bool = False) -> str:
+        """
+        生成水杉输入法 (Metasequoia IME) 官方标准 skin.toml 皮肤配置
+        规范: https://github.com/metasequoiaime/msime-windows
+        """
+        corner_radius = max(6, min(14, self.slices.get("top", 8)))
+
+        bg_block = ""
+        if has_bg:
+            bg_block = """
+[candidate_window.background]
+image = "assets/background.png"
+fit = "stretch"
+opacity = 0.95
+"""
+
+        deco_block = ""
+        if has_deco:
+            deco_block = """
+[candidate_window.decoration]
+image = "assets/character.png"
+width_dip = 60
+align = "right"
+"""
+
+        name = self.info.get("name", skin_id)
+        author = self.info.get("author", "BDS Community")
+
+        return f"""# 水杉输入法 (Metasequoia IME) 皮肤配置规范
+# 自动生成自百度输入法官方皮肤包: {name}
+schema_version = 1
+id = "{skin_id}"
+name = "{name}"
+version = "1.0.0"
+author = "{author}"
+base = "fluent"
+
+[supports]
+layouts = ["horizontal", "vertical"]
+themes = ["light", "dark"]
+
+[candidate_window]
+min_width_dip = 160
+corner_radius_dip = {corner_radius}
+{bg_block}{deco_block}
+[candidate.light]
+surface = "{self.fallback_bg}"
+text = "{self.text_color}"
+selected = "#E8F0FE"
+accent = "{self.first_color}"
+number = "#888888"
+border = "#E2E8F0"
+
+[candidate.dark]
+surface = "#222222"
+text = "{self.text_color if self.fallback_bg == '#222222' else '#EDEDED'}"
+selected = "#333333"
+accent = "{self.first_color if self.fallback_bg == '#222222' else '#60A5FA'}"
+number = "#888888"
+border = "#383838"
 """
 
     def generate_rime_weasel_yaml(self) -> str:
@@ -946,8 +1009,17 @@ patch:
 """
 
 
+def generate_safe_skin_id(theme_name: str) -> str:
+    """生成符合水杉输入法规范的皮肤 ID 与文件夹标识 (英文/数字/下划线)"""
+    clean = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '_', theme_name)
+    clean = re.sub(r'_+', '_', clean).strip('_')
+    if not clean:
+        clean = "theme"
+    return f"bds_{clean.lower()}"
+
+
 def process_bds(bds_path: str, output_base_dir: str):
-    """处理单个 BDS 文件并生成整套皮肤资源"""
+    """处理单个 BDS 文件并生成整套皮肤资源与水杉输入法官方主题包"""
     parser = BDSParser(bds_path)
     theme_name = parser.info.get("name", Path(bds_path).stem)
     # 安全文件夹名称
@@ -969,7 +1041,7 @@ def process_bds(bds_path: str, output_base_dir: str):
         with open(out_dir / "preview_art.png", "wb") as f:
             f.write(demo_bytes)
 
-    # 3. 生成水杉输入法 (MSIME) 主题文件
+    # 3. 生成水杉输入法 (MSIME) 主题文件 (WebView2 HTML/CSS)
     msime_css = gen.generate_msime_theme_css("cand.png")
     with open(out_dir / "theme.css", "w", encoding="utf-8") as f:
         f.write(msime_css)
@@ -988,28 +1060,74 @@ def process_bds(bds_path: str, output_base_dir: str):
     with open(out_dir / "interactive_preview.html", "w", encoding="utf-8") as f:
         f.write(preview_html)
 
+    # 6. 生成水杉输入法 (Metasequoia IME) 官方规范外部皮肤包 (skin.toml + assets/)
+    skin_id = generate_safe_skin_id(theme_name)
+    msime_pkg_dir = Path("msime_skins") / skin_id
+    msime_assets_dir = msime_pkg_dir / "assets"
+    msime_assets_dir.mkdir(parents=True, exist_ok=True)
+
+    has_bg = False
+    if cand_bytes:
+        with open(msime_assets_dir / "background.png", "wb") as f:
+            f.write(cand_bytes)
+        has_bg = True
+
+    has_deco = False
+    if demo_bytes:
+        with open(msime_assets_dir / "character.png", "wb") as f:
+            f.write(demo_bytes)
+        has_deco = True
+
+    msime_skin_toml = gen.generate_msime_skin_toml(skin_id, has_bg=has_bg, has_deco=has_deco)
+    with open(msime_pkg_dir / "skin.toml", "w", encoding="utf-8") as f:
+        f.write(msime_skin_toml)
+
+    # 7. 自动部署到水杉输入法用户目录 (%LOCALAPPDATA%\metasequoiaime\skins)
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    installed_path = None
+    if local_app_data:
+        target_msime_skins = Path(local_app_data) / "metasequoiaime" / "skins" / skin_id
+        try:
+            target_msime_skins.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(msime_pkg_dir, target_msime_skins, dirs_exist_ok=True)
+            installed_path = target_msime_skins
+        except Exception as e:
+            print(f"    [!] 自动同步到水杉皮肤目录失败: {e}")
+
     print(f"[+] 成功转换: {theme_name}")
     print(f"    - 目标目录: {out_dir}")
     print(f"    - 水杉输入法 HTML/CSS: {out_dir / 'candidate_window.html'}")
     print(f"    - 小狼毫 YAML 配色: {out_dir / 'weasel.custom.yaml'}")
     print(f"    - 交互式打字预览: {out_dir / 'interactive_preview.html'}")
+    print(f"    - 水杉官方皮肤包 (skin.toml): {msime_pkg_dir}")
+    if installed_path:
+        print(f"    - [已就绪] 自动安装到水杉目录: {installed_path}")
+
     return {
         "name": theme_name,
         "folder": safe_folder,
+        "skin_id": skin_id,
         "preview_url": f"{safe_folder}/interactive_preview.html",
         "html_url": f"{safe_folder}/candidate_window.html",
         "css_url": f"{safe_folder}/theme.css",
         "yaml_url": f"{safe_folder}/weasel.custom.yaml",
+        "msime_dir": str(msime_pkg_dir),
+        "msime_installed": str(installed_path) if installed_path else None,
         "has_art": bool(demo_bytes),
         "text_color": gen.text_color,
         "first_color": gen.first_color,
     }
 
 
+
 def generate_index_dashboard(themes: list, output_base_dir: str):
     """生成包含所有转换皮肤的统一控制台主页"""
     cards_html = ""
     for t in themes:
+        msime_btn = ""
+        if t.get("msime_dir"):
+            msime_btn = f"""<a href="../{t['msime_dir']}" target="_blank" class="btn btn-secondary">📦 查看水杉皮肤包 ({t['skin_id']})</a>"""
+
         cards_html += f"""
       <div class="theme-card">
         <div class="card-header">
@@ -1023,7 +1141,8 @@ def generate_index_dashboard(themes: list, output_base_dir: str):
           </div>
           <div class="card-actions">
             <a href="{t['preview_url']}" target="_blank" class="btn btn-primary">🚀 启动交互打字预览</a>
-            <a href="{t['html_url']}" target="_blank" class="btn btn-secondary">📄 查看水杉 HTML</a>
+            {msime_btn}
+            <a href="{t['html_url']}" target="_blank" class="btn btn-secondary">📄 查看 Webview HTML</a>
             <a href="{t['yaml_url']}" target="_blank" class="btn btn-secondary">⚙️ 小狼毫配置</a>
           </div>
         </div>
@@ -1211,11 +1330,11 @@ def generate_index_dashboard(themes: list, output_base_dir: str):
           <strong>体验与验证</strong>：点击上方任意皮肤卡片的 <code>🚀 启动交互打字预览</code>，即可在浏览器中全真模拟 Windows 桌面按键、首选高亮与拼音分词排版。
         </li>
         <li>
-          <strong>接入水杉输入法 (MSIME-Windows) [推荐]</strong>：
+          <strong>接入水杉输入法 (Metasequoia IME) [推荐，一键生效]</strong>：
           <ul>
-            <li>进入水杉输入法安装目录下的资源文件夹（或从源码编译的 <code>ui-html/webview2/default-themes/</code> 目录）。</li>
-            <li>将对应主题目录下的 <code>cand.png</code>、<code>theme.css</code> 和 <code>candidate_window.html</code> 复制至该主题目录，或将其配置为候选窗 WebView2 皮肤。</li>
-            <li>在设置或任务栏重启水杉输入法服务（快捷键 <code>Ctrl + Shift + Alt + R</code>）即可生效！</li>
+            <li>本转换器已全自动将生成的皮肤包复制到水杉专属目录：<code>%LOCALAPPDATA%\\metasequoiaime\\skins\\</code></li>
+            <li>在 Windows 任务栏或托盘打开<strong>水杉输入法设置</strong> -> <strong>外观与主题</strong>。</li>
+            <li>点击<strong>「刷新皮肤」</strong>（Refresh Skins），在皮肤列表中直接选择对应的 BDS 主题即可秒级换肤！</li>
           </ul>
         </li>
         <li>

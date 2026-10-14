@@ -25,7 +25,10 @@ Note-*
 4082*
 converted_themes/
 win11_native_skins/
-tools/
+msime_skins/
+tools/bkcrack*
+assets/current_skin.json
+assets/*.flag
 
 # Workspace docs
 .antigravity_docs/

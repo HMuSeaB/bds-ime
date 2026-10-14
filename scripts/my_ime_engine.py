@@ -10,11 +10,14 @@
 import os
 import sys
 import time
+import json
+import re
 import queue
 import sqlite3
 import ctypes
 from ctypes import wintypes
 import threading
+import urllib.request
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
@@ -291,6 +294,62 @@ class SoundHelper:
             winmm.mciSendStringW(f"play {alias} from 0", None, 0, None)
 
 
+class AICandidateHelper:
+    """水杉同款大模型长句联想推测客户端 (兼容 OpenAI/DeepSeek/Ollama 规范)"""
+    def __init__(self, config_getter):
+        self.config_getter = config_getter
+        self.current_req_id = 0
+        self.lock = threading.Lock()
+
+    def async_predict(self, pinyin_str: str, on_success_callback):
+        cfg = self.config_getter() or {}
+        ai_cfg = cfg.get("ai", {})
+        if not ai_cfg.get("enabled", False):
+            return
+
+        base_url = ai_cfg.get("baseUrl", "https://api.deepseek.com/v1").rstrip("/")
+        api_key = ai_cfg.get("apiKey", "")
+        model = ai_cfg.get("model", "deepseek-chat")
+
+        # 若无 key 且不是本地 ollama，直接略过
+        if not api_key and "127.0.0.1" not in base_url and "localhost" not in base_url:
+            return
+
+        with self.lock:
+            self.current_req_id += 1
+            req_id = self.current_req_id
+
+        def _worker():
+            try:
+                url = f"{base_url}/chat/completions"
+                payload = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "你是一个输入法整句联想引擎。根据拼音输出最可能的一句自然中文（控制在2-10字内），严禁任何解释。"},
+                        {"role": "user", "content": f"拼音: {pinyin_str}"}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 30
+                }
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}" if api_key else "Bearer ollama"
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+                with urllib.request.urlopen(req, timeout=1.8) as resp:
+                    if resp.status == 200:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        text = data["choices"][0]["message"]["content"].strip()
+                        text = re.sub(r'[\r\n"\'`]+', '', text)
+                        with self.lock:
+                            if req_id == self.current_req_id and text:
+                                on_success_callback(text)
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+
 class ModernCandidateWindow:
     """BDS 风格现代化悬浮候选窗"""
     def __init__(self, engine: PinyinEngine, on_commit_callback):
@@ -393,6 +452,30 @@ class ModernCandidateWindow:
         self.root.geometry(f"+{x}+{y}")
         self.root.deiconify()
 
+    def apply_skin(self, skin_cfg: dict):
+        """动态热更新候选窗配色与视觉参数"""
+        try:
+            colors = skin_cfg.get("colors", {})
+            self.bg_color = skin_cfg.get("surfaceBg", self.bg_color)
+            self.border_color = colors.get("border", self.border_color)
+            self.text_color = colors.get("text", self.text_color)
+            self.first_color = colors.get("accent", self.first_color)
+            self.pinyin_color = colors.get("pinyin", self.pinyin_color)
+            self.accent_pill = colors.get("selectedBg", self.accent_pill)
+
+            alpha = float(skin_cfg.get("opacity", 0.96))
+            self.root.attributes("-alpha", max(0.5, min(1.0, alpha)))
+            self.root.config(bg=self.border_color)
+            self.main_frame.config(bg=self.bg_color)
+            self.pinyin_row.config(bg=self.bg_color)
+            self.lbl_pinyin.config(fg=self.pinyin_color, bg=self.bg_color)
+            self.lbl_page.config(bg=self.bg_color)
+            self.cands_frame.config(bg=self.bg_color)
+            for lbl in self.cand_labels:
+                lbl.config(bg=self.bg_color, fg=self.text_color)
+        except Exception as e:
+            print(f"[!] 动态换肤更新异常: {e}")
+
     def hide(self):
         self.root.withdraw()
         self.current_candidates.clear()
@@ -413,6 +496,14 @@ class IMEController:
         self.event_queue = queue.Queue()
         self.ui = ModernCandidateWindow(self.engine, self.commit_word)
 
+        # 加载当前皮肤配置与 AI 助手
+        self.current_skin_cfg = self._load_current_skin()
+        if self.current_skin_cfg:
+            self.ui.apply_skin(self.current_skin_cfg)
+
+        self.ai_helper = AICandidateHelper(lambda: self.current_skin_cfg)
+        self.reload_counter = 0
+
         # 托盘/状态指示小浮条 (置于右下角任务栏正上方，保证清晰可见)
         self._setup_status_pill()
 
@@ -426,6 +517,16 @@ class IMEController:
         # UI 循环监听事件
         self.ui.root.after(10, self._process_queue)
 
+    def _load_current_skin(self) -> dict:
+        skin_file = BASE_DIR / "assets" / "current_skin.json"
+        if skin_file.exists():
+            try:
+                with open(skin_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {}
+
     def update_pinyin(self):
         """输入拼音变化时重新查询并渲染第 1 页候选词"""
         self.cand_page = 0
@@ -433,6 +534,13 @@ class IMEController:
             self.sound.play()
             self.pinyin_disp, self.all_candidates = self.engine.query(self.input_buffer, limit=60)
             self._render_current_page()
+
+            # 异步触发大模型智能长句联想推测 (水杉同款)
+            if len(self.input_buffer) >= 4:
+                self.ai_helper.async_predict(
+                    self.pinyin_disp,
+                    lambda ai_text: self.event_queue.put(("AI_CANDIDATE", ai_text))
+                )
         else:
             self.all_candidates = []
             self.ui.hide()
@@ -521,6 +629,9 @@ class IMEController:
 
     def commit_word(self, word: str):
         self.sound.play()
+        # 若为大模型联想长句，剥离前缀机器人图标
+        if word.startswith("🤖 "):
+            word = word[3:].strip()
         self.engine.learn_word(word, self.input_buffer)
         self.input_buffer = ""
         self.all_candidates = []
@@ -634,6 +745,30 @@ class IMEController:
                 self.ui.show_candidates(py_disp, cands)
             elif action == "HIDE_UI":
                 self.ui.hide()
+            elif action == "AI_CANDIDATE":
+                ai_text = data
+                ai_formatted = f"🤖 {ai_text}"
+                if self.input_buffer and ai_formatted not in self.all_candidates and ai_text not in self.all_candidates:
+                    # 智能插入到第 5 个候选项位置 (或末尾) 作为高智力长句补全
+                    insert_pos = min(4, len(self.all_candidates))
+                    self.all_candidates.insert(insert_pos, ai_formatted)
+                    self._render_current_page()
+
+        # 检查皮肤热重载信号 (约每 300ms 检查一次)
+        self.reload_counter = (self.reload_counter + 1) % 30
+        if self.reload_counter == 0:
+            flag_file = BASE_DIR / "assets" / "skin_reload.flag"
+            if flag_file.exists():
+                try:
+                    flag_file.unlink(missing_ok=True)
+                    new_skin = self._load_current_skin()
+                    if new_skin:
+                        self.current_skin_cfg = new_skin
+                        self.ui.apply_skin(new_skin)
+                        print(f"[+] 输入法已热重载应用新皮肤「{new_skin.get('name', 'Custom')}」！")
+                except Exception:
+                    pass
+
         self.ui.root.after(10, self._process_queue)
 
     def _start_hook(self):

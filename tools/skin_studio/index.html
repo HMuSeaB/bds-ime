@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BDS Skin Studio · 输入法皮肤创作工坊</title>
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --bg-card: #131b2e;
+      --bg-card-hover: #1a243c;
+      --border-color: #23304d;
+      --accent: #388bfd;
+      --accent-hover: #58a6ff;
+      --success: #238636;
+      --success-hover: #2ea043;
+      --purple: #8957e5;
+      --text-main: #f0f6fc;
+      --text-muted: #8b949e;
+      --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-stack);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部导航栏 */
+    header {
+      background: #0f172a;
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      font-size: 1.5rem;
+      background: linear-gradient(135deg, #388bfd, #8957e5);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(56, 139, 253, 0.15);
+      color: #58a6ff;
+      border: 1px solid rgba(56, 139, 253, 0.3);
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .preset-selector {
+      background: #1e293b;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      border: none;
+      text-decoration: none;
+    }
+
+    .btn-secondary {
+      background: #1e293b;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover {
+      background: #334155;
+      border-color: #475569;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      box-shadow: 0 0 12px rgba(56, 139, 253, 0.4);
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: #fff;
+    }
+    .btn-success:hover {
+      background: var(--success-hover);
+      box-shadow: 0 0 12px rgba(46, 160, 67, 0.4);
+    }
+
+    /* 主布局 */
+    .app-main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* 左侧控制栏 */
+    .sidebar {
+      width: 440px;
+      background: #0f172a;
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .tabs-header {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      background: #0b1120;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px 8px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .tab-btn.active {
+      color: #58a6ff;
+      border-bottom-color: #58a6ff;
+      background: rgba(56, 139, 253, 0.08);
+    }
+
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* 表单控件风格 */
+    .control-group {
+      margin-bottom: 20px;
+      background: #131c31;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .control-group-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #93c5fd;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      font-size: 0.82rem;
+    }
+
+    .control-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .control-label {
+      color: #cbd5e1;
+      flex: 1;
+    }
+
+    .control-input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input[type="range"] {
+      width: 140px;
+      accent-color: #388bfd;
+      cursor: pointer;
+    }
+
+    .range-val {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      width: 42px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="color"] {
+      -webkit-appearance: none;
+      border: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      background: none;
+      padding: 0;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch {
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 6px;
+    }
+
+    .hex-val {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      width: 65px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    /* 拖拽上传区域 */
+    .drop-zone {
+      border: 2px dashed #334155;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      background: #0f172a;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .drop-zone:hover {
+      border-color: #388bfd;
+      background: rgba(56, 139, 253, 0.05);
+    }
+    .drop-zone-text {
+      font-size: 0.78rem;
+      color: #94a3b8;
+    }
+    .drop-zone input[type="file"] {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .thumb-preview {
+      max-height: 50px;
+      max-width: 100%;
+      margin-top: 8px;
+      border-radius: 4px;
+      border: 1px solid #334155;
+      display: none;
+    }
+
+    /* 右侧画布交互区 */
+    .canvas-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #050811;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .canvas-header {
+      padding: 12px 24px;
+      background: #090e1a;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .canvas-title {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .workspace-stage {
+      flex: 1;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background-image: 
+        radial-gradient(circle at 50% 50%, rgba(56, 139, 253, 0.08) 0%, transparent 60%),
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 24px 24px, 24px 24px;
+    }
+
+    /* 模拟打字宿主卡片 */
+    .mock-host-card {
+      width: 680px;
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .mock-host-bar {
+      padding: 10px 16px;
+      background: #1e293b;
+      border-top-left-radius: 11px;
+      border-top-right-radius: 11px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .window-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .window-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-r { background: #ef4444; }
+    .dot-y { background: #f59e0b; }
+    .dot-g { background: #10b981; }
+
+    .mock-editor-area {
+      padding: 24px;
+      min-height: 180px;
+      position: relative;
+      font-size: 1.15rem;
+      line-height: 1.8;
+      color: #e2e8f0;
+      outline: none;
+      cursor: text;
+    }
+
+    .editor-prompt {
+      color: #64748b;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+      user-select: none;
+    }
+
+    .typing-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.2rem;
+      background: #388bfd;
+      vertical-align: middle;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    /* 核心：实时渲染的输入法候选浮窗 (完全由左侧 CSS 变量驱动) */
+    .live-ime-window {
+      position: absolute;
+      top: 96px;
+      left: 32px;
+      z-index: 50;
+      transition: all 0.15s ease-out;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 装饰立绘 */
+    .live-mascot {
+      position: absolute;
+      pointer-events: none;
+      transition: all 0.2s ease;
+      z-index: 60;
+    }
+
+    .live-pinyin-row {
+      padding: 2px 8px;
+      margin-bottom: 4px;
+      font-size: 0.9em;
+      letter-spacing: 0.5px;
+    }
+
+    .live-candidates-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 4px;
+    }
+
+    .live-cand-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+      white-space: nowrap;
+    }
+
+    .live-cand-num {
+      font-size: 0.85em;
+      opacity: 0.85;
+    }
+
+    .live-cand-text {
+      font-weight: 500;
+    }
+
+    .live-cand-ai-tag {
+      font-size: 0.65rem;
+      background: linear-gradient(135deg, #a855f7, #3b82f6);
+      color: #fff;
+      padding: 1px 4px;
+      border-radius: 3px;
+      margin-left: 2px;
+    }
+
+    /* 底部代码预览抽屉 */
+    .code-drawer {
+      height: 160px;
+      background: #090e1a;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drawer-bar {
+      padding: 8px 16px;
+      background: #0f172a;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: #94a3b8;
+    }
+
+    .drawer-tabs {
+      display: flex;
+      gap: 12px;
+    }
+    .drawer-tab {
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .drawer-tab.active {
+      color: #388bfd;
+      background: rgba(56, 139, 253, 0.1);
+    }
+
+    .code-box {
+      flex: 1;
+      padding: 12px 16px;
+      margin: 0;
+      background: #060912;
+      color: #7dd3fc;
+      font-family: "Consolas", monospace;
+      font-size: 0.75rem;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    /* Toast 通知 */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      background: #1e293b;
+      color: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 1000;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .toast-icon { font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部导航 -->
+  <header>
+    <div class="brand">
+      <span class="brand-icon">🎨</span>
+      <span class="brand-title">BDS Skin Studio</span>
+      <span class="brand-badge">v2.0 可视化工坊</span>
+    </div>
+
+    <div class="top-actions">
+      <label style="font-size: 0.82rem; color: #94a3b8;">模板预设:</label>
+      <select id="presetSelect" class="preset-selector">
+        <option value="pixel_cat">🐾 像素喵喵爪 (Pixel Cat Paw)</option>
+        <option value="pink_bunny">🐰 小板爪爪兔 (Pink Bunny)</option>
+        <option value="note_dark">🖤 Note-极简暗黑 (Note Dark)</option>
+        <option value="win11_fluent">🪟 Win11 亚克力半透明 (Fluent)</option>
+        <option value="cyber_neon">⚡ 赛博霓虹 (Cyber Neon)</option>
+      </select>
+
+      <button id="btnImport" class="btn btn-secondary">📂 导入皮肤包</button>
+      <input type="file" id="fileImporter" style="display: none;" accept=".toml,.json,.bds">
+
+      <button id="btnExportMsime" class="btn btn-secondary">💾 导出水杉包 (skin.toml)</button>
+      <button id="btnApply" class="btn btn-success">🚀 一键应用到当前输入法</button>
+    </div>
+  </header>
+
+  <!-- 主体工作区 -->
+  <div class="app-main">
+
+    <!-- 左侧参数调节面板 -->
+    <div class="sidebar">
+      <div class="tabs-header">
+        <button class="tab-btn active" data-tab="tab-bg">
+          <span>🖼️</span><span>窗口与材质</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-mascot">
+          <span>🐰</span><span>立绘挂件</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-color">
+          <span>🎨</span><span>字体色彩</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-ai">
+          <span>🤖</span><span>AI 补全</span>
+        </button>
+      </div>
+
+      <!-- Tab 1: 窗口与背景材质 -->
+      <div id="tab-bg" class="tab-content active">
+        
+        <div class="control-group">
+          <div class="control-group-title">
+            <span>背景底图</span>
+            <span style="font-size: 0.7rem; color: #64748b;">9-Patch / Texture</span>
+          </div>
+
+          <div class="drop-zone" id="bgDropZone">
+            <span class="drop-zone-text">点击或拖放背景切片 PNG/JPG</span>
+            <input type="file" id="bgFileInput" accept="image/*">
+            <img id="bgThumb" class="thumb-preview" alt="背景缩略图">
+          </div>
+
+          <div class="control-row" style="margin-top: 12px;">
+            <span class="control-label">切片拉伸模式</span>
+            <select id="bgFitMode" class="preset-selector" style="width: 140px;">
+              <option value="stretch">9-Patch 九宫格</option>
+              <option value="cover">等比铺满 (Cover)</option>
+              <option value="pure">纯色/无背景图</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="control-group" id="sliceControls">
+          <div class="control-group-title">
+            <span>9-Patch 切片边距</span>
+            <span style="font-size: 0.7rem; color: #64748b;">像素切割</span>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">顶部切片 (Top)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="sliceTop" min="0" max="40" value="12">
+              <span class="range-val" id="valSliceTop">12px</span>
+            </div>
+          </div>
+          <div class="control-row">
+            <span class="control-label">右侧切片 (Right)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="sliceRight" min="0" max="40" value="12">
+              <span class="range-val" id="valSliceRight">12px</span>
+            </div>
+          </div>
+          <div class="control-row">
+            <span class="control-label">底部切片 (Bottom)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="sliceBottom" min="0" max="40" value="12">
+              <span class="range-val" id="valSliceBottom">12px</span>
+            </div>
+          </div>
+          <div class="control-row">
+            <span class="control-label">左侧切片 (Left)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="sliceLeft" min="0" max="40" value="12">
+              <span class="range-val" id="valSliceLeft">12px</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="control-group-title">
+            <span>窗口形态与几何</span>
+            <span style="font-size: 0.7rem; color: #64748b;">Geometry</span>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">圆角大小 (Radius)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="cornerRadius" min="0" max="28" value="12">
+              <span class="range-val" id="valRadius">12px</span>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">不透明度 (Opacity)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="bgOpacity" min="50" max="100" value="98">
+              <span class="range-val" id="valOpacity">98%</span>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">窗口投影 (Shadow)</span>
+            <select id="boxShadowMode" class="preset-selector" style="width: 140px;">
+              <option value="deep">深邃弥散投影</option>
+              <option value="soft">柔和轻投影</option>
+              <option value="none">无阴影 (扁平)</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">底色 / 回退背景色</span>
+            <div class="control-input-wrapper">
+              <input type="color" id="surfaceBgColor" value="#fbfaf8">
+              <input type="text" id="surfaceBgText" class="hex-val" value="#fbfaf8">
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Tab 2: 角色立绘挂件 -->
+      <div id="tab-mascot" class="tab-content">
+        <div class="control-group">
+          <div class="control-group-title">
+            <span>角色立绘图片</span>
+            <span style="font-size: 0.7rem; color: #64748b;">Mascot PNG/GIF</span>
+          </div>
+
+          <div class="drop-zone" id="mascotDropZone">
+            <span class="drop-zone-text">点击或拖放立绘透明 PNG 或 GIF</span>
+            <input type="file" id="mascotFileInput" accept="image/*">
+            <img id="mascotThumb" class="thumb-preview" alt="立绘预览">
+          </div>
+
+          <div class="control-row" style="margin-top: 12px;">
+            <span class="control-label">启用立绘悬浮</span>
+            <input type="checkbox" id="mascotEnable" checked style="width: 18px; height: 18px; accent-color: #388bfd;">
+          </div>
+        </div>
+
+        <div class="control-group" id="mascotPositionGroup">
+          <div class="control-group-title">
+            <span>摆放对齐与大小</span>
+            <span style="font-size: 0.7rem; color: #64748b;">Layout</span>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">对齐位置</span>
+            <select id="mascotAlign" class="preset-selector" style="width: 140px;">
+              <option value="right">右上角悬浮 (Top Right)</option>
+              <option value="center">顶部居中探头 (Top Center)</option>
+              <option value="left">左侧贴附 (Top Left)</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">立绘宽度 (Width)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="mascotWidth" min="32" max="110" value="64">
+              <span class="range-val" id="valMascotWidth">64px</span>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">垂直偏移 (Y-Offset)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="mascotOffsetY" min="-40" max="30" value="-16">
+              <span class="range-val" id="valMascotY">-16px</span>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">水平偏移 (X-Offset)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="mascotOffsetX" min="-30" max="30" value="-8">
+              <span class="range-val" id="valMascotX">-8px</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: 字体与色彩体系 -->
+      <div id="tab-color" class="tab-content">
+        <div class="control-group">
+          <div class="control-group-title">
+            <span>候选词色彩</span>
+            <span style="font-size: 0.7rem; color: #64748b;">Palette</span>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">常规文字颜色 (Text)</span>
+            <div class="control-input-wrapper">
+              <input type="color" id="textColor" value="#2b2b2b">
+              <input type="text" id="textHex" class="hex-val" value="#2b2b2b">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">首选高亮文字 (Accent)</span>
+            <div class="control-input-wrapper">
+              <input type="color" id="accentColor" value="#000000">
+              <input type="text" id="accentHex" class="hex-val" value="#000000">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">首选项背景底色</span>
+            <div class="control-input-wrapper">
+              <input type="color" id="selectedBgColor" value="#e8f0fe">
+              <input type="text" id="selectedBgHex" class="hex-val" value="#e8f0fe">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">序号数字颜色 (Number)</span>
+            <div class="control-input-wrapper">
+              <input type="color" id="numberColor" value="#888888">
+              <input type="text" id="numberHex" class="hex-val" value="#888888">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">拼音编码行颜色</span>
+            <div class="control-input-wrapper">
+              <input type="color" id="pinyinColor" value="#666666">
+              <input type="text" id="pinyinHex" class="hex-val" value="#666666">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">边框线条颜色</span>
+            <div class="control-input-wrapper">
+              <input type="color" id="borderColor" value="#e2e8f0">
+              <input type="text" id="borderHex" class="hex-val" value="#e2e8f0">
+            </div>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="control-group-title">
+            <span>排版与字体</span>
+            <span style="font-size: 0.7rem; color: #64748b;">Typography</span>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">字号大小 (Font Size)</span>
+            <div class="control-input-wrapper">
+              <input type="range" id="fontSize" min="14" max="22" value="16">
+              <span class="range-val" id="valFontSize">16px</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: AI 大模型配置 (水杉同款) -->
+      <div id="tab-ai" class="tab-content">
+        <div class="control-group">
+          <div class="control-group-title">
+            <span>AI 大模型长句补全</span>
+            <span style="font-size: 0.7rem; color: #64748b;">DeepSeek / OpenAI</span>
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">启用大模型联想</span>
+            <input type="checkbox" id="aiEnable" checked style="width: 18px; height: 18px; accent-color: #388bfd;">
+          </div>
+
+          <div class="control-row">
+            <span class="control-label">服务商预设</span>
+            <select id="aiProviderSelect" class="preset-selector" style="width: 160px;">
+              <option value="deepseek">DeepSeek 官方 API</option>
+              <option value="siliconflow">硅基流动 (SiliconFlow)</option>
+              <option value="ollama">本地 Ollama (免费离线)</option>
+              <option value="custom">自定义兼容 OpenAI</option>
+            </select>
+          </div>
+
+          <div style="margin-top: 10px;">
+            <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 4px;">API Base URL:</label>
+            <input type="text" id="aiBaseUrl" value="https://api.deepseek.com/v1" style="width: 100%; padding: 6px 10px; background: #0f172a; border: 1px solid #334155; color: #f8fafc; border-radius: 6px; font-size: 0.8rem;">
+          </div>
+
+          <div style="margin-top: 10px;">
+            <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 4px;">API Key (密码已脱敏):</label>
+            <input type="password" id="aiApiKey" placeholder="sk-..." style="width: 100%; padding: 6px 10px; background: #0f172a; border: 1px solid #334155; color: #f8fafc; border-radius: 6px; font-size: 0.8rem;">
+          </div>
+
+          <div style="margin-top: 10px;">
+            <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 4px;">模型名称 (Model):</label>
+            <input type="text" id="aiModel" value="deepseek-chat" style="width: 100%; padding: 6px 10px; background: #0f172a; border: 1px solid #334155; color: #f8fafc; border-radius: 6px; font-size: 0.8rem;">
+          </div>
+
+          <div style="margin-top: 14px;">
+            <button id="btnTestAi" class="btn btn-secondary" style="width: 100%; justify-content: center;">⚡ 测试 API 连通性</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 右侧：所见即所得交互仿真画布 -->
+    <div class="canvas-panel">
+      <div class="canvas-header">
+        <div class="canvas-title">
+          <span class="live-dot"></span>
+          <span>实时所见即所得仿真画布 (支持鼠标点击或直接键盘打字互动)</span>
+        </div>
+        <div>
+          <button id="btnResetTyping" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;">🔄 重置打字内容</button>
+        </div>
+      </div>
+
+      <div class="workspace-stage">
+        
+        <!-- 模拟宿主软件打字卡片 (例如模拟备忘录/微信聊天框) -->
+        <div class="mock-host-card">
+          <div class="mock-host-bar">
+            <div class="window-dots">
+              <span class="window-dot dot-r"></span>
+              <span class="window-dot dot-y"></span>
+              <span class="window-dot dot-g"></span>
+            </div>
+            <span style="font-size: 0.8rem; color: #94a3b8; margin-left: 8px;">打字仿真交互应用 - 点击此处敲字 (例如输入: shuisan, nihao, bds)</span>
+          </div>
+
+          <div class="mock-editor-area" id="mockEditor" tabindex="0">
+            <div class="editor-prompt">💡 点击下方空白处，尝试在键盘上敲击拼音，感受候选框实时跟随与皮肤渲染效果：</div>
+            <span id="committedText">今天的天气真好，</span>
+            <span id="inlinePreedit" style="color: #60a5fa; text-decoration: underline; font-weight: 500;">shuisan</span>
+            <span class="typing-cursor"></span>
+
+            <!-- 核心：实时渲染的输入法候选浮窗 -->
+            <div class="live-ime-window" id="imeWindow">
+              
+              <!-- 角色立绘挂件 -->
+              <img id="mascotEl" class="live-mascot" src="" alt="立绘挂件">
+
+              <!-- 拼音编码栏 -->
+              <div class="live-pinyin-row" id="pinyinRowEl">
+                <span id="pinyinDisplay">shui'san</span>
+              </div>
+
+              <!-- 候选项列表 -->
+              <div class="live-candidates-row" id="candidatesRowEl">
+                <div class="live-cand-item first" id="cand1">
+                  <span class="live-cand-num">1.</span>
+                  <span class="live-cand-text">水杉</span>
+                </div>
+                <div class="live-cand-item" id="cand2">
+                  <span class="live-cand-num">2.</span>
+                  <span class="live-cand-text">水三</span>
+                </div>
+                <div class="live-cand-item" id="cand3">
+                  <span class="live-cand-num">3.</span>
+                  <span class="live-cand-text">水散</span>
+                </div>
+                <div class="live-cand-item" id="cand4">
+                  <span class="live-cand-num">4.</span>
+                  <span class="live-cand-text">税伞</span>
+                </div>
+                <div class="live-cand-item" id="cand5">
+                  <span class="live-cand-num">🤖</span>
+                  <span class="live-cand-text">水杉输入法新一代架构</span>
+                  <span class="live-cand-ai-tag">AI</span>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 底部代码预览抽屉 -->
+      <div class="code-drawer">
+        <div class="drawer-bar">
+          <div class="drawer-tabs">
+            <span class="drawer-tab active" data-drawer="toml">skin.toml (水杉规范)</span>
+            <span class="drawer-tab" data-drawer="css">theme.css (WebView2 样式)</span>
+          </div>
+          <div>
+            <button id="btnCopyCode" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.72rem;">📋 复制代码</button>
+          </div>
+        </div>
+        <pre class="code-box" id="codeDisplay"></pre>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Toast 弹出消息 -->
+  <div class="toast" id="toast">
+    <span class="toast-icon">✨</span>
+    <span class="toast-text" id="toastMsg">已成功应用皮肤！</span>
+  </div>
+
+  <script>
+    // 状态管理
+    const state = {
+      name: "我的专属萌系皮肤",
+      id: "bds_custom_theme",
+      author: "Me",
+      bgFit: "stretch",
+      bgImage: "", // Base64 或图片相对路径
+      slice: { top: 12, right: 12, bottom: 12, left: 12 },
+      radius: 12,
+      opacity: 0.98,
+      shadow: "deep",
+      surfaceBg: "#fbfaf8",
+      
+      mascot: {
+        enabled: true,
+        image: "",
+        align: "right",
+        width: 64,
+        offsetY: -16,
+        offsetX: -8
+      },
+
+      colors: {
+        text: "#2b2b2b",
+        accent: "#000000",
+        selectedBg: "#e8f0fe",
+        number: "#888888",
+        pinyin: "#666666",
+        border: "#e2e8f0"
+      },
+
+      fontSize: 16,
+
+      ai: {
+        enabled: true,
+        provider: "deepseek",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey: "",
+        model: "deepseek-chat"
+      }
+    };
+
+    // 预置默认立绘 (像素喵爪 SVG inline)
+    const DEFAULT_MASCOT_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="38" r="14" fill="%23f472b6"/><circle cx="18" cy="20" r="6" fill="%23fb7185"/><circle cx="32" cy="14" r="6" fill="%23fb7185"/><circle cx="46" cy="20" r="6" fill="%23fb7185"/></svg>`;
+    state.mascot.image = DEFAULT_MASCOT_SVG;
+
+    // DOM 元素引用
+    const imeWindow = document.getElementById("imeWindow");
+    const mascotEl = document.getElementById("mascotEl");
+    const pinyinRowEl = document.getElementById("pinyinRowEl");
+    const candidatesRowEl = document.getElementById("candidatesRowEl");
+    const codeDisplay = document.getElementById("codeDisplay");
+    const toast = document.getElementById("toast");
+    const toastMsg = document.getElementById("toastMsg");
+
+    // 显示 Toast
+    function showToast(msg, icon = "✨") {
+      toastMsg.innerText = msg;
+      toast.querySelector(".toast-icon").innerText = icon;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2800);
+    }
+
+    // 更新 live-ime-window 样式与立绘
+    function renderPreview() {
+      // 1. 背景与 9-patch
+      if (state.bgFit === "stretch" && state.bgImage) {
+        imeWindow.style.borderStyle = "solid";
+        imeWindow.style.borderWidth = `${Math.min(state.slice.top, 16)}px ${Math.min(state.slice.right, 16)}px ${Math.min(state.slice.bottom, 16)}px ${Math.min(state.slice.left, 16)}px`;
+        imeWindow.style.borderImageSource = `url("${state.bgImage}")`;
+        imeWindow.style.borderImageSlice = `${state.slice.top} ${state.slice.right} ${state.slice.bottom} ${state.slice.left} fill`;
+        imeWindow.style.borderImageRepeat = "stretch";
+        imeWindow.style.backgroundColor = "transparent";
+      } else if (state.bgFit === "cover" && state.bgImage) {
+        imeWindow.style.borderStyle = "solid";
+        imeWindow.style.borderWidth = "1px";
+        imeWindow.style.borderColor = state.colors.border;
+        imeWindow.style.backgroundImage = `url("${state.bgImage}")`;
+        imeWindow.style.backgroundSize = "cover";
+        imeWindow.style.backgroundPosition = "center";
+        imeWindow.style.borderImage = "none";
+      } else {
+        imeWindow.style.borderStyle = "solid";
+        imeWindow.style.borderWidth = "1px";
+        imeWindow.style.borderColor = state.colors.border;
+        imeWindow.style.backgroundColor = state.surfaceBg;
+        imeWindow.style.borderImage = "none";
+        imeWindow.style.backgroundImage = "none";
+      }
+
+      imeWindow.style.borderRadius = `${state.radius}px`;
+      imeWindow.style.opacity = state.opacity;
+
+      // 投影
+      if (state.shadow === "deep") {
+        imeWindow.style.boxShadow = "0 14px 36px rgba(0, 0, 0, 0.38)";
+      } else if (state.shadow === "soft") {
+        imeWindow.style.boxShadow = "0 6px 16px rgba(0, 0, 0, 0.18)";
+      } else {
+        imeWindow.style.boxShadow = "none";
+      }
+
+      // 2. 颜色与字体
+      imeWindow.style.fontSize = `${state.fontSize}px`;
+      pinyinRowEl.style.color = state.colors.pinyin;
+
+      // 候选项颜色
+      const candItems = document.querySelectorAll(".live-cand-item");
+      candItems.forEach(el => {
+        const text = el.querySelector(".live-cand-text");
+        const num = el.querySelector(".live-cand-num");
+        num.style.color = state.colors.number;
+
+        if (el.classList.contains("first")) {
+          text.style.color = state.colors.accent;
+          el.style.backgroundColor = state.colors.selectedBg;
+        } else {
+          text.style.color = state.colors.text;
+          el.style.backgroundColor = "transparent";
+        }
+      });
+
+      // 3. 立绘挂件
+      if (state.mascot.enabled && state.mascot.image) {
+        mascotEl.style.display = "block";
+        mascotEl.src = state.mascot.image;
+        mascotEl.style.width = `${state.mascot.width}px`;
+
+        mascotEl.style.top = `${state.mascot.offsetY}px`;
+        if (state.mascot.align === "right") {
+          mascotEl.style.left = "auto";
+          mascotEl.style.right = `${state.mascot.offsetX}px`;
+        } else if (state.mascot.align === "left") {
+          mascotEl.style.right = "auto";
+          mascotEl.style.left = `${state.mascot.offsetX}px`;
+        } else {
+          mascotEl.style.left = `calc(50% - ${state.mascot.width / 2}px)`;
+          mascotEl.style.right = "auto";
+        }
+      } else {
+        mascotEl.style.display = "none";
+      }
+
+      // 4. 更新底部代码展示
+      updateCodeDisplay();
+    }
+
+    // 生成水杉 skin.toml
+    function generateSkinToml() {
+      let bgBlock = "";
+      if (state.bgFit !== "pure") {
+        bgBlock = `
+[candidate_window.background]
+image = "assets/background.png"
+fit = "${state.bgFit}"
+opacity = ${state.opacity.toFixed(2)}
+`;
+      }
+
+      let decoBlock = "";
+      if (state.mascot.enabled) {
+        decoBlock = `
+[candidate_window.decoration]
+image = "assets/character.png"
+width_dip = ${state.mascot.width}
+align = "${state.mascot.align}"
+`;
+      }
+
+      return `# 水杉输入法 (Metasequoia IME) 皮肤配置规范
+# 由 BDS Skin Studio 可视化工坊创作生成
+schema_version = 1
+id = "${state.id}"
+name = "${state.name}"
+version = "1.0.0"
+author = "${state.author}"
+base = "fluent"
+
+[supports]
+layouts = ["horizontal", "vertical"]
+themes = ["light", "dark"]
+
+[candidate_window]
+min_width_dip = 160
+corner_radius_dip = ${state.radius}
+${bgBlock}${decoBlock}
+[candidate.light]
+surface = "${state.surfaceBg}"
+text = "${state.colors.text}"
+selected = "${state.colors.selectedBg}"
+accent = "${state.colors.accent}"
+number = "${state.colors.number}"
+border = "${state.colors.border}"
+
+[candidate.dark]
+surface = "#222222"
+text = "#EDEDED"
+selected = "#333333"
+accent = "${state.colors.accent}"
+number = "#888888"
+border = "#383838"
+`;
+    }
+
+    // 生成 WebView2 CSS
+    function generateCss() {
+      return `/* BDS-IME & 水杉 WebView2 皮肤样式表 */
+:root {
+  --text-color: ${state.colors.text};
+  --accent-color: ${state.colors.accent};
+  --selected-bg: ${state.colors.selectedBg};
+  --number-color: ${state.colors.number};
+  --pinyin-color: ${state.colors.pinyin};
+}
+
+.container {
+  border-radius: ${state.radius}px;
+  background-color: ${state.surfaceBg};
+  opacity: ${state.opacity};
+  font-size: ${state.fontSize}px;
+}
+`;
+    }
+
+    let currentDrawer = "toml";
+    function updateCodeDisplay() {
+      codeDisplay.innerText = currentDrawer === "toml" ? generateSkinToml() : generateCss();
+    }
+
+    // 预设集
+    const PRESETS = {
+      pixel_cat: {
+        name: "像素喵喵爪",
+        id: "bds_pixel_cat_paw",
+        surfaceBg: "#fbfaf8",
+        colors: { text: "#2c2c2c", accent: "#111111", selectedBg: "#fed7aa", number: "#9a3412", pinyin: "#78716c", border: "#fdba74" },
+        radius: 14,
+        slice: { top: 12, right: 12, bottom: 12, left: 12 }
+      },
+      pink_bunny: {
+        name: "小板爪爪兔",
+        id: "bds_pink_bunny",
+        surfaceBg: "#fff5f7",
+        colors: { text: "#4a044e", accent: "#db2777", selectedBg: "#fce7f3", number: "#f472b6", pinyin: "#f43f5e", border: "#fbcfe8" },
+        radius: 16,
+        slice: { top: 14, right: 14, bottom: 14, left: 14 }
+      },
+      note_dark: {
+        name: "Note-极简暗黑",
+        id: "bds_note_dark",
+        surfaceBg: "#18181b",
+        colors: { text: "#e4e4e7", accent: "#38bdf8", selectedBg: "#27272a", number: "#71717a", pinyin: "#a1a1aa", border: "#3f3f46" },
+        radius: 10,
+        slice: { top: 8, right: 8, bottom: 8, left: 8 }
+      },
+      win11_fluent: {
+        name: "Win11 亚克力半透明",
+        id: "bds_win11_fluent",
+        surfaceBg: "rgba(240, 240, 240, 0.85)",
+        colors: { text: "#1f2937", accent: "#0284c7", selectedBg: "#e0f2fe", number: "#6b7280", pinyin: "#4b5563", border: "#e5e7eb" },
+        radius: 10,
+        opacity: 0.92
+      },
+      cyber_neon: {
+        name: "赛博霓虹",
+        id: "bds_cyber_neon",
+        surfaceBg: "#090d16",
+        colors: { text: "#67e8f9", accent: "#f43f5e", selectedBg: "#1e1b4b", number: "#a855f7", pinyin: "#22d3ee", border: "#ec4899" },
+        radius: 6,
+        opacity: 0.98
+      }
+    };
+
+    // 事件绑定与监听
+    document.addEventListener("DOMContentLoaded", () => {
+      // 侧边栏 Tab 切换
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+          document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById(btn.dataset.tab).classList.add("active");
+        });
+      });
+
+      // 底部抽屉切换
+      document.querySelectorAll(".drawer-tab").forEach(tab => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".drawer-tab").forEach(t => t.classList.remove("active"));
+          tab.classList.add("active");
+          currentDrawer = tab.dataset.drawer;
+          updateCodeDisplay();
+        });
+      });
+
+      // 滑块绑定通用方法
+      function bindRange(id, statePath, displayId, unit = "px", multiplier = 1) {
+        const slider = document.getElementById(id);
+        const disp = document.getElementById(displayId);
+        slider.addEventListener("input", (e) => {
+          const val = parseFloat(e.target.value);
+          disp.innerText = `${val}${unit}`;
+          // 写入 state
+          let target = state;
+          const parts = statePath.split(".");
+          for (let i = 0; i < parts.length - 1; i++) target = target[parts[i]];
+          target[parts[parts.length - 1]] = val * multiplier;
+          renderPreview();
+        });
+      }
+
+      bindRange("sliceTop", "slice.top", "valSliceTop");
+      bindRange("sliceRight", "slice.right", "valSliceRight");
+      bindRange("sliceBottom", "slice.bottom", "valSliceBottom");
+      bindRange("sliceLeft", "slice.left", "valSliceLeft");
+      bindRange("cornerRadius", "radius", "valRadius");
+      bindRange("bgOpacity", "opacity", "valOpacity", "%", 0.01);
+      bindRange("mascotWidth", "mascot.width", "valMascotWidth");
+      bindRange("mascotOffsetY", "mascot.offsetY", "valMascotY");
+      bindRange("mascotOffsetX", "mascot.offsetX", "valMascotX");
+      bindRange("fontSize", "fontSize", "valFontSize");
+
+      // 颜色双向绑定
+      function bindColor(colorId, hexId, statePath) {
+        const colorEl = document.getElementById(colorId);
+        const hexEl = document.getElementById(hexId);
+        const update = (val) => {
+          colorEl.value = val;
+          hexEl.value = val;
+          let target = state;
+          const parts = statePath.split(".");
+          for (let i = 0; i < parts.length - 1; i++) target = target[parts[i]];
+          target[parts[parts.length - 1]] = val;
+          renderPreview();
+        };
+        colorEl.addEventListener("input", (e) => update(e.target.value));
+        hexEl.addEventListener("change", (e) => update(e.target.value));
+      }
+
+      bindColor("surfaceBgColor", "surfaceBgText", "surfaceBg");
+      bindColor("textColor", "textHex", "colors.text");
+      bindColor("accentColor", "accentHex", "colors.accent");
+      bindColor("selectedBgColor", "selectedBgHex", "colors.selectedBg");
+      bindColor("numberColor", "numberHex", "colors.number");
+      bindColor("pinyinColor", "pinyinHex", "colors.pinyin");
+      bindColor("borderColor", "borderHex", "colors.border");
+
+      // 背景拉伸模式
+      document.getElementById("bgFitMode").addEventListener("change", (e) => {
+        state.bgFit = e.target.value;
+        document.getElementById("sliceControls").style.display = state.bgFit === "stretch" ? "block" : "none";
+        renderPreview();
+      });
+
+      // 投影模式
+      document.getElementById("boxShadowMode").addEventListener("change", (e) => {
+        state.shadow = e.target.value;
+        renderPreview();
+      });
+
+      // 立绘开关与对齐
+      document.getElementById("mascotEnable").addEventListener("change", (e) => {
+        state.mascot.enabled = e.target.checked;
+        document.getElementById("mascotPositionGroup").style.display = state.mascot.enabled ? "block" : "none";
+        renderPreview();
+      });
+
+      document.getElementById("mascotAlign").addEventListener("change", (e) => {
+        state.mascot.align = e.target.value;
+        renderPreview();
+      });
+
+      // 图片上传监听
+      function setupUpload(inputId, zoneId, thumbId, callback) {
+        const input = document.getElementById(inputId);
+        const zone = document.getElementById(zoneId);
+        const thumb = document.getElementById(thumbId);
+
+        const handleFile = (file) => {
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const b64 = e.target.result;
+            thumb.src = b64;
+            thumb.style.display = "block";
+            callback(b64);
+            renderPreview();
+          };
+          reader.readAsDataURL(file);
+        };
+
+        input.addEventListener("change", (e) => handleFile(e.target.files[0]));
+        zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.style.borderColor = "#388bfd"; });
+        zone.addEventListener("dragleave", () => { zone.style.borderColor = "#334155"; });
+        zone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          zone.style.borderColor = "#334155";
+          if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+      }
+
+      setupUpload("bgFileInput", "bgDropZone", "bgThumb", (b64) => { state.bgImage = b64; });
+      setupUpload("mascotFileInput", "mascotDropZone", "mascotThumb", (b64) => { state.mascot.image = b64; });
+
+      // 预设切换
+      document.getElementById("presetSelect").addEventListener("change", (e) => {
+        const p = PRESETS[e.target.value];
+        if (p) {
+          state.name = p.name;
+          state.id = p.id;
+          state.surfaceBg = p.surfaceBg;
+          document.getElementById("surfaceBgColor").value = p.surfaceBg.startsWith("#") ? p.surfaceBg : "#ffffff";
+          document.getElementById("surfaceBgText").value = p.surfaceBg;
+          state.colors = { ...state.colors, ...p.colors };
+          document.getElementById("textColor").value = state.colors.text;
+          document.getElementById("accentColor").value = state.colors.accent;
+          document.getElementById("selectedBgColor").value = state.colors.selectedBg;
+          document.getElementById("numberColor").value = state.colors.number;
+          document.getElementById("pinyinColor").value = state.colors.pinyin;
+          document.getElementById("borderColor").value = state.colors.border;
+          if (p.radius) {
+            state.radius = p.radius;
+            document.getElementById("cornerRadius").value = p.radius;
+            document.getElementById("valRadius").innerText = `${p.radius}px`;
+          }
+          renderPreview();
+          showToast(`已加载「${p.name}」设计模板！`, "🎨");
+        }
+      });
+
+      // 复制代码
+      document.getElementById("btnCopyCode").addEventListener("click", () => {
+        navigator.clipboard.writeText(codeDisplay.innerText).then(() => {
+          showToast("已成功复制皮肤代码到剪贴板！", "📋");
+        });
+      });
+
+      // 导出水杉包
+      document.getElementById("btnExportMsime").addEventListener("click", async () => {
+        const tomlContent = generateSkinToml();
+        try {
+          const res = await fetch("/api/export_msime", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state, toml: tomlContent })
+          });
+          const data = await res.json();
+          if (data.status === "ok") {
+            showToast(`已成功导出并同步至水杉目录: ${data.path}`, "🌲");
+          } else {
+            downloadBlob(tomlContent, `${state.id}.toml`);
+            showToast("本地导出已下载为 toml 文件", "💾");
+          }
+        } catch (err) {
+          downloadBlob(tomlContent, `${state.id}.toml`);
+          showToast("离线模式：已自动下载 skin.toml", "💾");
+        }
+      });
+
+      // 一键应用到当前输入法
+      document.getElementById("btnApply").addEventListener("click", async () => {
+        try {
+          const res = await fetch("/api/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(state)
+          });
+          const data = await res.json();
+          if (data.status === "ok") {
+            showToast("🎉 皮肤已成功应用至正在运行的输入法！", "🚀");
+          } else {
+            showToast("应用指令已发出: " + data.msg, "⚡");
+          }
+        } catch (err) {
+          localStorage.setItem("bds_custom_theme", JSON.stringify(state));
+          showToast("离线保存成功！本地已记录该主题。", "💾");
+        }
+      });
+
+      function downloadBlob(content, filename) {
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      // 打字仿真交互支持
+      const mockEditor = document.getElementById("mockEditor");
+      const committedText = document.getElementById("committedText");
+      const inlinePreedit = document.getElementById("inlinePreedit");
+      const pinyinDisplay = document.getElementById("pinyinDisplay");
+
+      let preeditStr = "shuisan";
+
+      mockEditor.addEventListener("keydown", (e) => {
+        if (e.key >= "a" && e.key <= "z") {
+          e.preventDefault();
+          preeditStr += e.key;
+          inlinePreedit.innerText = preeditStr;
+          pinyinDisplay.innerText = preeditStr;
+        } else if (e.key === "Backspace") {
+          e.preventDefault();
+          if (preeditStr.length > 0) {
+            preeditStr = preeditStr.slice(0, -1);
+            inlinePreedit.innerText = preeditStr;
+            pinyinDisplay.innerText = preeditStr || "拼音编码";
+          }
+        } else if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          if (preeditStr) {
+            committedText.innerText += "水杉";
+            preeditStr = "";
+            inlinePreedit.innerText = "";
+            pinyinDisplay.innerText = "等待输入";
+          }
+        }
+      });
+
+      document.getElementById("btnResetTyping").addEventListener("click", () => {
+        committedText.innerText = "今天的天气真好，";
+        preeditStr = "shuisan";
+        inlinePreedit.innerText = preeditStr;
+        pinyinDisplay.innerText = "shui'san";
+        mockEditor.focus();
+      });
+
+      // 初始化渲染
+      renderPreview();
+    });
+  </script>
+</body>
+</html>

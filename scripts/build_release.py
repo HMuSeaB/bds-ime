@@ -25,7 +25,7 @@ DIST_DIR = BASE_DIR / "dist"
 BUILD_DIR = BASE_DIR / "build"
 ASSETS_DIR = BASE_DIR / "assets"
 ICON_PATH = ASSETS_DIR / "app.ico"
-VERSION = "1.0.2"
+VERSION = "2.0.0"
 
 
 def clean_previous_builds():
@@ -38,9 +38,9 @@ def clean_previous_builds():
 
 def run_pyinstaller():
     """执行 PyInstaller 打包流程"""
-    print(f"[*] 开始打包 BDS 专属输入法 v{VERSION} ...")
+    print(f"[*] 开始打包 BDS-IME 一体化工业级输入法 v{VERSION} ...")
 
-    entry_script = BASE_DIR / "scripts" / "my_ime_engine.py"
+    entry_script = BASE_DIR / "bds_ime" / "__main__.py"
     if not entry_script.exists():
         print(f"[-] 找不到主程序入口: {entry_script}")
         return False
@@ -52,6 +52,7 @@ def run_pyinstaller():
         f"{BASE_DIR / 'sound_packs'};sound_packs",
         f"{BASE_DIR / 'pet_assets'};pet_assets",
         f"{BASE_DIR / 'assets'};assets",
+        f"{BASE_DIR / 'tools' / 'skin_studio'};tools/skin_studio",
     ]
 
     cmd = [
