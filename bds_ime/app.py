@@ -240,6 +240,29 @@ class BDSInputMethodApp:
             self.update_pinyin()
             return True
 
+        # 中文全角常用标点符号自动映射 (当无未决拼音时生效)
+        if not self.input_buffer and self.is_chinese_mode:
+            is_shift = bool(user32.GetAsyncKeyState(0x10) & 0x8000)
+            punc = None
+            if vk == VK_OEM_COMMA:
+                punc = "《" if is_shift else "，"
+            elif vk == VK_OEM_PERIOD:
+                punc = "》" if is_shift else "。"
+            elif vk == 0xBF:  # VK_OEM_2 (/ ?)
+                punc = "？" if is_shift else "、"
+            elif vk == 0xBA:  # VK_OEM_1 (; :)
+                punc = "：" if is_shift else "；"
+            elif vk == ord('1') and is_shift:
+                punc = "！"
+            elif vk == ord('6') and is_shift:
+                punc = "……"
+            elif vk == 0xC0 and is_shift:  # VK_OEM_3 (~ `)
+                punc = "～"
+
+            if punc:
+                threading.Thread(target=lambda: SendInputHelper.send_unicode_string(punc), daemon=True).start()
+                return True
+
         return False
 
     def _process_queue(self):

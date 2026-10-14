@@ -10,9 +10,11 @@ import urllib.request
 
 
 class AICandidateHelper:
-    def __init__(self, config_getter):
+    def __init__(self, config_getter, debounce_sec: float = 0.22):
         self.config_getter = config_getter
+        self.debounce_sec = debounce_sec
         self.current_req_id = 0
+        self.debounce_timer = None
         self.lock = threading.Lock()
 
     def async_predict(self, pinyin_str: str, on_success_callback):
@@ -32,8 +34,10 @@ class AICandidateHelper:
         with self.lock:
             self.current_req_id += 1
             req_id = self.current_req_id
+            if self.debounce_timer:
+                self.debounce_timer.cancel()
 
-        def _worker():
+        def _do_request():
             try:
                 url = f"{base_url}/chat/completions"
                 payload = {
@@ -41,12 +45,12 @@ class AICandidateHelper:
                     "messages": [
                         {
                             "role": "system",
-                            "content": "你是一个输入法整句联想引擎。根据拼音输出最可能的一句自然中文（控制在2-10字内），严禁任何解释。"
+                            "content": "你是一个输入法整句联想引擎。根据拼音输出最可能的一句自然中文（控制在2-10字内），严禁任何解释、前缀或标点。"
                         },
                         {"role": "user", "content": f"拼音: {pinyin_str}"}
                     ],
                     "temperature": 0.3,
-                    "max_tokens": 30
+                    "max_tokens": 24
                 }
                 headers = {
                     "Content-Type": "application/json",
@@ -58,15 +62,20 @@ class AICandidateHelper:
                     headers=headers,
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=1.8) as resp:
+                with urllib.request.urlopen(req, timeout=1.6) as resp:
                     if resp.status == 200:
                         data = json.loads(resp.read().decode("utf-8"))
                         text = data["choices"][0]["message"]["content"].strip()
-                        text = re.sub(r'[\r\n"\'`]+', '', text)
+                        # 清洗前缀废话、引号与末尾标点
+                        text = re.sub(r'^(好的|当然|为您联想|补全结果|提示|联想词|AI)[:：\s]*', '', text)
+                        text = re.sub(r'[\r\n"\'`。！，？]+', '', text).strip()
                         with self.lock:
                             if req_id == self.current_req_id and text:
                                 on_success_callback(text)
             except Exception:
                 pass
 
-        threading.Thread(target=_worker, daemon=True).start()
+        with self.lock:
+            self.debounce_timer = threading.Timer(self.debounce_sec, _do_request)
+            self.debounce_timer.daemon = True
+            self.debounce_timer.start()

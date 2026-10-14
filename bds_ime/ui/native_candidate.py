@@ -106,14 +106,17 @@ class NativeCandidateWindow:
 
         for i, lbl in enumerate(self.cand_labels):
             if i < len(candidates):
-                text = f"{i + 1}.{candidates[i]}"
-                lbl.config(text=text)
+                word_val = candidates[i]
+                text = f"{i + 1}.{word_val}"
+                lbl.config(text=text, cursor="hand2")
+                lbl.bind("<Button-1>", lambda e, w=word_val: self.on_commit(w))
                 if i == 0:
                     lbl.config(fg=self.first_color, bg=self.accent_pill, font=("Microsoft YaHei", 12, "bold"))
                 else:
                     lbl.config(fg=self.text_color, bg=self.bg_color, font=("Microsoft YaHei", 12))
             else:
-                lbl.config(text="")
+                lbl.config(text="", cursor="default")
+                lbl.unbind("<Button-1>")
 
         # 光标位置跟随
         pt = wintypes.POINT()
